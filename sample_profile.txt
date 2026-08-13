@@ -1,0 +1,22 @@
+Investor Profile
+================
+
+Name: Sample Investor
+Risk appetite: moderate
+Capital available: around 5 lakh for equities
+Investment horizon: long term (3-5 years)
+
+Preferences:
+- Prefer large-cap and quality mid-cap companies
+- Like sectors: IT, banking, capital goods
+- Comfortable holding through volatility if the business is strong
+
+Exclusions:
+- No tobacco or alcohol companies
+- No penny stocks
+- No F&O / derivatives, cash equity only
+
+Notes:
+- I care more about business quality and downside protection than chasing
+  the hottest momentum name.
+- Position sizing: no single stock more than 15% of the equity portfolio.

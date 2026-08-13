@@ -1,0 +1,19 @@
+# --- Core ---
+google-genai>=1.0.0        # Gemini models (Vertex AI + AI Studio)
+python-dotenv>=1.0.0       # loads the .env file
+
+# --- Market data (only needed for DATA_MODE=live) ---
+yfinance>=0.2.40           # free NSE/BSE prices via Yahoo Finance
+pandas>=2.0.0
+numpy>=1.24.0
+
+# --- Memory layer ---
+chromadb>=0.5.0            # optional vector memory; falls back to JSON if missing
+
+# --- Investor profile parsing (only what you use is required) ---
+pypdf>=4.0.0               # .pdf profiles
+python-docx>=1.1.0         # .docx profiles
+beautifulsoup4>=4.12.0     # .html profiles
+
+# --- Alerts ---
+requests>=2.31.0           # Telegram messages

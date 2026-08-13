@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import config; print\\(config.settings.universe\\)\")",
+      "Bash(DATA_MODE=demo UNIVERSE=NIFTY50 TELEGRAM_BOT_TOKEN= TELEGRAM_CHAT_ID= python3 run.py)",
+      "Bash(DATA_MODE=demo UNIVERSE=\"RELIANCE,TCS,INFY\" python3 run.py)"
+    ]
+  }
+}
