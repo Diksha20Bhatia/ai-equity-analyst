@@ -31,23 +31,6 @@ class TechnicalAgent(BaseAgent):
             '{"score": <0-10>, "read": "one line"}'
         )
         result = self.ask_json(prompt)
-        if result and "score" in result:
-            return {"symbol": symbol, **result}
-
-        # ---- Fallback: simple rule ----
-        score = 5.0
-        score += 1.5 if t["above_sma50"] else -1.5
-        score += 1.5 if t["above_sma200"] else -1.5
-        score += 1 if t["near_high"] else 0
-        score += 1 if t["volume_ratio"] > 1.5 else 0
-        if t["rsi"] > 70:
-            score -= 1   # overbought
-        elif t["rsi"] < 30:
-            score -= 1   # oversold / weak
-        score = max(0, min(10, round(score, 1)))
-        read = (
-            "Strong uptrend with volume" if score >= 7
-            else "Neutral / choppy" if score >= 4
-            else "Weak / downtrend"
-        )
-        return {"symbol": symbol, "score": score, "read": read}
+        if "score" not in result:
+            raise RuntimeError(f"[{self.name}] response missing 'score' for {symbol}: {result}")
+        return {"symbol": symbol, **result}

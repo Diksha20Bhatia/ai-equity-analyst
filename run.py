@@ -44,9 +44,15 @@ def banner(text):
 def main():
     banner("AI EQUITY ANALYST  —  daily run")
     print(f"Date        : {dt.date.today().isoformat()}")
-    print(f"Gemini login: {auth_used}  ({'connected' if client else 'FALLBACK MODE — no LLM'})")
+    print(f"Gemini login: {auth_used}  ({'connected' if client else 'NOT CONNECTED'})")
     print(f"Data mode   : {settings.data_mode}")
     print(f"Model       : {settings.model}")
+
+    if client is None:
+        raise RuntimeError(
+            "Gemini is not configured — check GOOGLE_AUTH_MODE, GOOGLE_API_KEY, "
+            "or your Google Cloud ADC login in .env."
+        )
 
     # 1. Load profile + memory --------------------------------------------------
     profile = load_profile(settings.profile_path)

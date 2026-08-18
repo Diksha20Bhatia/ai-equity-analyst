@@ -24,22 +24,6 @@ class SentimentAgent(BaseAgent):
             '{"score": <0-10>, "summary": "one line"}'
         )
         result = self.ask_json(prompt)
-        if result and "score" in result:
-            return {"symbol": symbol, **result}
-
-        # ---- Fallback: keyword scan ----
-        positive = ("surge", "profit", "beats", "record", "growth", "upgrade",
-                    "wins", "order", "expansion", "strong")
-        negative = ("fall", "loss", "probe", "fraud", "downgrade", "weak",
-                    "cut", "decline", "penalty", "resign")
-        text = " ".join(headlines).lower()
-        pos = sum(text.count(w) for w in positive)
-        neg = sum(text.count(w) for w in negative)
-        score = 5 + pos - neg
-        score = max(0, min(10, score))
-        summary = (
-            "Positive news flow" if score >= 7
-            else "Mixed / quiet" if score >= 4
-            else "Negative news flow"
-        )
-        return {"symbol": symbol, "score": score, "summary": summary}
+        if "score" not in result:
+            raise RuntimeError(f"[{self.name}] response missing 'score' for {symbol}: {result}")
+        return {"symbol": symbol, **result}

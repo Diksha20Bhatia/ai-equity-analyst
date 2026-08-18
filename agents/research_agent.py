@@ -39,23 +39,6 @@ class ResearchAgent(BaseAgent):
         )
 
         result = self.ask_json(prompt)
-        if result and "watchlist" in result:
-            return result
-
-        # ---- Fallback: rank by a simple unusual-ness score ----
-        def score(s):
-            return abs(s["pct_change"]) + s["volume_ratio"] * 2 + (
-                5 if s.get("has_block_deal") else 0
-            )
-
-        ranked = sorted(universe, key=score, reverse=True)[:watchlist_size]
-        return {
-            "watchlist": [s["symbol"] for s in ranked],
-            "notes": {
-                s["symbol"]: (
-                    f"{s['pct_change']:+.1f}% on {s['volume_ratio']:.1f}x volume"
-                    + (" + block deal" if s.get("has_block_deal") else "")
-                )
-                for s in ranked
-            },
-        }
+        if "watchlist" not in result:
+            raise RuntimeError(f"[{self.name}] response missing 'watchlist': {result}")
+        return result

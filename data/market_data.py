@@ -6,8 +6,9 @@ Gives every agent the raw numbers it needs. Two modes:
   demo : returns realistic, deterministic sample data. No internet, no keys.
          Perfect for your first run and for understanding the flow.
   live : pulls real prices from Yahoo Finance (yfinance) using the .NS
-         (NSE) suffix. Fundamentals / news are partially stubbed because
-         those need paid APIs — see the notes in each function.
+         (NSE) suffix, real recent headlines from Google News, and real
+         traded turnover for liquidity risk. Deep fundamentals (ROCE) and
+         promoter/pledge data need paid APIs — see the notes below.
 
 Each stock returns four bundles that map 1:1 to the four analysis agents:
   fundamentals -> Fundamental Agent
@@ -18,7 +19,14 @@ plus the "activity" row the Research Agent scans.
 """
 
 import hashlib
+import xml.etree.ElementTree as ET
+from urllib.parse import quote
+
+import requests
+
 from config import settings
+
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; ai-equity-analyst/1.0)"}
 
 
 # ----------------------------------------------------------------------
@@ -58,10 +66,7 @@ def _demo_bundle(symbol: str) -> dict:
         },
         "headlines": _demo_headlines(symbol, s),
         "risk_inputs": {
-            "promoter_change": round((s - 0.6) * 4, 1), # mostly small
-            "pledge_pct": round((1 - s) * 30, 1),       # 0 .. 30%
-            "earnings_quality": round(3 + s * 7),       # 3 .. 10
-            "liquidity_cr": round(3 + s * 120),         # 3 .. 123 Cr
+            "liquidity_cr": round(3 + s * 120, 1),      # 3 .. 123 Cr
         },
     }
 
@@ -84,14 +89,31 @@ def _demo_headlines(symbol, s):
 
 
 # ----------------------------------------------------------------------
-# LIVE DATA  — real prices via yfinance; fundamentals/news partly stubbed.
+# REAL NEWS  — Google News RSS search, free and keyless.
+# ----------------------------------------------------------------------
+def _real_headlines(symbol: str, limit: int = 5) -> list:
+    query = quote(f"{symbol} NSE stock")
+    url = f"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
+    try:
+        resp = requests.get(url, headers=_HEADERS, timeout=10)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+        titles = [item.findtext("title") for item in root.findall(".//item")]
+        titles = [t for t in titles if t][:limit]
+        return titles or [f"No recent news found for {symbol}"]
+    except Exception as e:
+        print(f"[data] news fetch failed for {symbol}: {e}")
+        return [f"No recent news found for {symbol}"]
+
+
+# ----------------------------------------------------------------------
+# LIVE DATA  — real prices via yfinance; ROCE still needs a paid API.
 # ----------------------------------------------------------------------
 def _live_bundle(symbol: str) -> dict:
     try:
         import yfinance as yf
-        import numpy as np
     except ImportError:
-        print("[data] yfinance/numpy not installed — falling back to demo for", symbol)
+        print("[data] yfinance not installed — falling back to demo for", symbol)
         return _demo_bundle(symbol)
 
     ticker = yf.Ticker(f"{symbol}.NS")
@@ -108,6 +130,7 @@ def _live_bundle(symbol: str) -> dict:
     sma200 = close.tail(200).mean()
     high52 = close.max()
     vol_ratio = float(vol.iloc[-1] / max(vol.tail(20).mean(), 1))
+    turnover_cr = float((close.tail(20) * vol.tail(20)).mean() / 1e7)  # real avg daily turnover
 
     # RSI (14)
     delta = close.diff()
@@ -122,7 +145,7 @@ def _live_bundle(symbol: str) -> dict:
     except Exception:
         info = {}
 
-    demo = _demo_bundle(symbol)  # used to fill gaps live data can't cover
+    demo = _demo_bundle(symbol)  # only used to fill fundamentals gaps (ROCE has no free source)
     bundle = {
         "symbol": symbol,
         "activity": {
@@ -148,9 +171,10 @@ def _live_bundle(symbol: str) -> dict:
             "near_high": bool(last > high52 * 0.95),
             "volume_ratio": round(vol_ratio, 1),
         },
-        # News + risk need real feeds (NewsAPI, NSE filings). Stubbed for now.
-        "headlines": demo["headlines"],
-        "risk_inputs": demo["risk_inputs"],
+        "headlines": _real_headlines(symbol),
+        "risk_inputs": {
+            "liquidity_cr": round(turnover_cr, 1),
+        },
     }
     return bundle
 

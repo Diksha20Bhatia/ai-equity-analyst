@@ -9,9 +9,9 @@ It understands three login modes (GOOGLE_AUTH_MODE):
     token -> Google AI Studio API key
     auto  -> try adc first, fall back to token
 
-If no valid Gemini credentials are found, the client is set to None. The
-agents notice this and switch to a simple rule-based fallback so the whole
-pipeline still runs end-to-end (useful for a first test with no keys).
+If no valid Gemini credentials are found, the client is set to None. Agents
+require a live client — they raise a clear error rather than degrading to
+rule-based logic, so a broken setup is never silently masked.
 """
 
 import os

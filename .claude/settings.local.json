@@ -4,7 +4,16 @@
       "Bash(python3 -c ' *)",
       "Bash(python3 -c \"import config; print\\(config.settings.universe\\)\")",
       "Bash(DATA_MODE=demo UNIVERSE=NIFTY50 TELEGRAM_BOT_TOKEN= TELEGRAM_CHAT_ID= python3 run.py)",
-      "Bash(DATA_MODE=demo UNIVERSE=\"RELIANCE,TCS,INFY\" python3 run.py)"
+      "Bash(DATA_MODE=demo UNIVERSE=\"RELIANCE,TCS,INFY\" python3 run.py)",
+      "Bash(uv --version)",
+      "Bash(uv venv *)",
+      "Bash(cp .env.example .env)",
+      "Bash(uv pip *)",
+      "Bash(uv run *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(curl -s -A \"Mozilla/5.0\" \"https://news.google.com/rss/search?q=HCLTECH%20NSE%20stock&hl=en-IN&gl=IN&ceid=IN:en\" --max-time 15)",
+      "Bash(DATA_MODE=live uv run python -c ' *)",
+      "Bash(DATA_MODE=live UNIVERSE=HCLTECH,INFY,TCS TOP_N=2 uv run python run.py)"
     ]
   }
 }

@@ -30,20 +30,6 @@ class FundamentalAgent(BaseAgent):
             '{"score": <0-10>, "verdict": "one line"}'
         )
         result = self.ask_json(prompt)
-        if result and "score" in result:
-            return {"symbol": symbol, **result}
-
-        # ---- Fallback: simple weighted rule ----
-        score = 5.0
-        score += min(f["revenue_growth"] / 5, 2)        # growth helps
-        score += min(f["roce"] / 10, 2)                 # returns help
-        score += 1 if f["operating_margin"] > 15 else 0  # healthy margins
-        score -= 2 if f["debt_to_equity"] > 1.5 else 0   # too much debt hurts
-        score -= 1 if f["pe_ratio"] > 40 else 0          # very expensive
-        score = max(0, min(10, round(score, 1)))
-        verdict = (
-            "Strong, growing business" if score >= 7
-            else "Mixed fundamentals" if score >= 4
-            else "Weak fundamentals"
-        )
-        return {"symbol": symbol, "score": score, "verdict": verdict}
+        if "score" not in result:
+            raise RuntimeError(f"[{self.name}] response missing 'score' for {symbol}: {result}")
+        return {"symbol": symbol, **result}

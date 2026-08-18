@@ -29,11 +29,9 @@ class DecisionAgent(BaseAgent):
         """
         prompt = self._build_prompt(analyses, profile, memory_notes, top_n)
         result = self.ask_json(prompt, temperature=0.4)
-        if result and "shortlist" in result:
-            return result
-
-        # ---- Fallback: score-based ranking ----
-        return self._fallback(analyses, profile, top_n)
+        if "shortlist" not in result:
+            raise RuntimeError(f"[{self.name}] response missing 'shortlist': {result}")
+        return result
 
     # ------------------------------------------------------------------
     def _build_prompt(self, analyses, profile, memory_notes, top_n):
@@ -61,40 +59,3 @@ class DecisionAgent(BaseAgent):
             '"conviction": "high/medium", "thesis": "2-3 sentence reasoning", '
             '"key_risk": "one line"}], "summary": "one-paragraph market note"}'
         )
-
-    # ------------------------------------------------------------------
-    def _fallback(self, analyses, profile, top_n):
-        excl = {s.upper() for s in profile.get("sector_exclusions", [])} if profile else set()
-
-        def combined(a):
-            # reward good fundamentals/technicals/sentiment, punish risk
-            return (
-                a["fundamental"]["score"] * 1.2
-                + a["technical"]["score"]
-                + a["sentiment"]["score"] * 0.8
-                - a["risk"]["risk_score"] * 1.5
-            )
-
-        ranked = [a for a in analyses if a["symbol"].upper() not in excl]
-        ranked.sort(key=combined, reverse=True)
-        shortlist = []
-        for a in ranked[:top_n]:
-            shortlist.append({
-                "symbol": a["symbol"],
-                "conviction": "high" if combined(a) > 12 else "medium",
-                "thesis": (
-                    f"Fundamentals {a['fundamental']['score']}/10, "
-                    f"technicals {a['technical']['score']}/10, "
-                    f"sentiment {a['sentiment']['score']}/10. "
-                    f"{a['fundamental']['verdict']}; {a['technical']['read']}."
-                ),
-                "key_risk": a["risk"]["flags"][0],
-            })
-        return {
-            "shortlist": shortlist,
-            "summary": (
-                f"Scanned {len(analyses)} names; surfaced {len(shortlist)} that best "
-                "balance quality, momentum and risk for this profile. "
-                "(Rule-based fallback — connect Gemini for richer reasoning.)"
-            ),
-        }
