@@ -36,7 +36,6 @@ class Settings:
         self.access_token = os.getenv("GOOGLE_ACCESS_TOKEN", "").strip()
         self.model = os.getenv("GOOGLE_MODEL", "gemini-3.5-flash").strip()
 
-        self.data_mode = os.getenv("DATA_MODE", "demo").strip().lower()
         self.top_n = int(os.getenv("TOP_N", "3"))
         # Either an index keyword (NIFTY50 / NIFTY500) or a comma-separated
         # list of NSE symbols — resolved to an actual symbol list by

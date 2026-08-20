@@ -8,20 +8,36 @@ This is the one file you actually run:
 It walks through the whole morning routine, in order:
 
   1. Load your settings, investor profile and memory.
-  2. Research Agent scans the basket and picks a short watchlist.
-  3. For each watchlist stock, the four specialist agents analyse it.
-  4. Memory recalls anything relevant from past runs.
-  5. Decision Agent combines everything into a final shortlist.
-  6. Store today's analysis into memory and send a Telegram alert.
+  2. Fetch real market context (Nifty 50) once for the whole run.
+  3. Research Agent (pure code) scans the basket and picks a short watchlist
+     using a real anomaly score — no AI call.
+  4. Fundamental / Technical / Risk agents (pure code) score the watchlist
+     from real data — no AI calls.
+  5. News/Event Reader makes ONE batched AI call to interpret real headlines
+     for the whole watchlist at once.
+  6. Memory reports what changed since the last call on each stock.
+  7. Decision Agent makes ONE batched AI call PER selected risk-appetite
+     tier (a plain "moderate" investor gets 1 call; someone who selected
+     conservative + aggressive gets 2, one shortlist per tier).
+  8. Store today's scores into memory and send a Telegram alert.
 
-Everything is printed as it happens so you can watch the agents "think".
+2 AI calls happen per run for a single risk tier, no matter how big the
+universe is — see README.md for why. Selecting more than one risk-appetite
+tier adds one more Decision Agent call per extra tier, since each tier
+gets its own independently-reasoned shortlist.
+
+For same-day intraday picks (opening-range breakout / VWAP / volume-surge),
+run intraday_run.py instead — a separate, zero-AI, on-demand scan that only
+means anything while the market is open.
 """
 
 import json
 import datetime as dt
 
+import observability
+from observability import traceable
 from config import settings, auth_used, client
-from data import market_data
+from data import market_data, market_context
 from data.nse_universe import resolve_universe
 from memory.memory_layer import MemoryLayer
 from profile.profile_loader import load_profile
@@ -41,12 +57,13 @@ def banner(text):
     print("=" * 64)
 
 
+@traceable(run_type="chain", name="AI Equity Analyst — swing run")
 def main():
     banner("AI EQUITY ANALYST  —  daily run")
     print(f"Date        : {dt.date.today().isoformat()}")
     print(f"Gemini login: {auth_used}  ({'connected' if client else 'NOT CONNECTED'})")
-    print(f"Data mode   : {settings.data_mode}")
     print(f"Model       : {settings.model}")
+    print(f"Tracing     : {'LangSmith (connected)' if observability.enabled else 'disabled (set LANGSMITH_API_KEY to enable)'}")
 
     if client is None:
         raise RuntimeError(
@@ -62,80 +79,211 @@ def main():
     universe = resolve_universe(settings.universe)
     print(f"Universe    : {len(universe)} stocks ({settings.universe})")
 
-    # 2. Research Agent scans everything ---------------------------------------
-    banner("STEP 1 — Research Agent scans the market")
-    bundles = market_data.get_bundles(universe)
+    # 2. Real market context, fetched ONCE for the whole run --------------------
+    banner("STEP 1 — Real market context (Nifty 50)")
+    mkt = market_context.get_market_context()
+    print(f"  Nifty 50: {mkt['nifty_pct_change']:+.1f}% today, trend={mkt['nifty_trend']}, "
+          f"volatility={mkt['nifty_volatility_pct']}% annualised")
+
+    # 3. Scout scans everything — pure code, zero AI calls -----------------------
+    banner("STEP 2 — Research Agent (Scout) scans the market — 0 AI calls")
+    bundles = market_data.get_bundles(universe, index_close=mkt["close_series"])
+    if not bundles:
+        raise RuntimeError("No real data could be fetched for any symbol in the universe.")
+    skipped = len(universe) - len(bundles)
+    if skipped:
+        print(f"  ({skipped} symbol(s) skipped — insufficient real data, see [data] lines above)")
     activity = market_data.get_activity(bundles)
 
     research = ResearchAgent()
-    scan = research.run(activity, watchlist_size=min(5, len(universe)))
+    scan = research.run(activity, market_pct_change=mkt["nifty_pct_change"],
+                         watchlist_size=min(5, len(bundles)))
     watchlist = scan["watchlist"]
     for sym in watchlist:
         print(f"  • {sym}: {scan['notes'].get(sym, '')}")
 
-    # 3. Specialist agents study each watchlist stock --------------------------
-    banner("STEP 2 — Specialist agents analyse the watchlist")
-    fundamental, technical = FundamentalAgent(), TechnicalAgent()
-    sentiment, risk = SentimentAgent(), RiskAgent()
+    # 4. Fundamental / Technical / Risk — pure code, zero AI calls ---------------
+    banner("STEP 3 — Fundamental / Technical / Risk agents — 0 AI calls")
+    fundamental, technical, risk = FundamentalAgent(), TechnicalAgent(), RiskAgent()
 
     analyses = []
     for sym in watchlist:
         b = bundles[sym]
-        print(f"\n  Analysing {sym} ...")
         f = fundamental.run(sym, b["fundamentals"])
         t = technical.run(sym, b["technicals"])
-        s = sentiment.run(sym, b["headlines"])
         r = risk.run(sym, b["risk_inputs"])
-        print(f"    Fundamental {f['score']}/10 | Technical {t['score']}/10 "
-              f"| Sentiment {s['score']}/10 | Risk {r['risk_score']}/10")
+        print(f"  {sym}: Fundamental {f['score']}/10 | Technical {t['score']}/10 | Risk {r['risk_score']}/10")
         analyses.append({
             "symbol": sym,
+            "sector": b.get("sector"),
             "fundamental": f,
             "technical": t,
-            "sentiment": s,
             "risk": r,
             "research_note": scan["notes"].get(sym, ""),
+            "market_stats": market_data.bundle_market_stats(b),
+            "headlines": b["headlines"],
+            "data_quality": b.get("data_quality", []),
         })
 
-    # 4. Recall memory ----------------------------------------------------------
-    memory_notes = []
-    for sym in watchlist:
-        for note in memory.recall(sym):
-            memory_notes.append(f"{sym}: {note}")
-
-    # 5. Decision Agent decides -------------------------------------------------
-    banner("STEP 3 — Decision Agent writes the shortlist")
-    decision = DecisionAgent()
-    result = decision.run(analyses, profile, memory_notes, top_n=settings.top_n)
-
-    # 6. Store memory + build the alert ----------------------------------------
+    # 5. News/Event Reader — ONE batched AI call for the whole watchlist --------
+    banner("STEP 4 — News/Event Reader — 1 batched AI call")
+    event_agent = SentimentAgent()
+    headlines_by_symbol = {a["symbol"]: a["headlines"] for a in analyses}
+    events = event_agent.run(headlines_by_symbol)
     for a in analyses:
-        note = (f"F{a['fundamental']['score']}/T{a['technical']['score']}/"
-                f"S{a['sentiment']['score']}/Risk{a['risk']['risk_score']}")
-        memory.store(a["symbol"], note)
+        a["event"] = events.get(a["symbol"], {})
+        print(f"  {a['symbol']}: {a['event'].get('sentiment', '?')} / "
+              f"{a['event'].get('event_type', '?')} (materiality={a['event'].get('materiality', '?')})")
 
-    alert = format_alert(result)
-    banner("STEP 4 — Final output")
+    # 6. Memory deltas — what changed since the last call on each stock ---------
+    memory_deltas = []
+    for a in analyses:
+        current_scores = {
+            "fundamental_score": a["fundamental"]["score"],
+            "technical_score": a["technical"]["score"],
+            "risk_score": a["risk"]["risk_score"],
+        }
+        memory_deltas.append(
+            memory.build_delta(a["symbol"], a["market_stats"]["current_price"], current_scores)
+        )
+
+    # 7. Decision Agent — ONE batched AI call PER selected risk-appetite tier ---
+    risk_tiers = _resolve_risk_tiers(profile)
+    banner(f"STEP 5 — Decision Agent — 1 batched AI call x {len(risk_tiers)} risk tier(s)")
+    decision = DecisionAgent()
+    results_by_tier = {}
+    for tier in risk_tiers:
+        tier_profile = dict(profile)
+        tier_profile["risk_appetite"] = tier
+        tier_profile.pop("risk_appetites", None)
+        results_by_tier[tier] = decision.run(analyses, tier_profile, mkt, memory_deltas, top_n=settings.top_n)
+        print(f"  [{tier}] {len(results_by_tier[tier].get('shortlist', []))} pick(s)")
+
+    # 8. Store memory + send the alert -------------------------------------------
+    # A symbol can get a different call at different risk tiers — memory keeps
+    # all of them, tier-labelled, rather than picking just one.
+    actions_by_symbol = {}
+    for tier, result in results_by_tier.items():
+        for p in result.get("shortlist", []):
+            actions_by_symbol.setdefault(p["symbol"], []).append(f"{tier}:{p.get('action', 'n/a')}")
+    for a in analyses:
+        memory.store(a["symbol"], {
+            "price": a["market_stats"]["current_price"],
+            "fundamental_score": a["fundamental"]["score"],
+            "technical_score": a["technical"]["score"],
+            "risk_score": a["risk"]["risk_score"],
+            "action": ", ".join(actions_by_symbol.get(a["symbol"], ["not_shortlisted"])),
+        })
+
+    alert = format_alert(results_by_tier)
+    banner("STEP 6 — Final output")
     telegram_alert.send(alert)
 
-    # Save a copy to disk for your records.
+    # Save a copy to disk for your records (drop the raw price series first —
+    # it's a pandas Series, not JSON-serialisable, and the dashboard/agents
+    # only needed it transiently during this run).
+    for a in analyses:
+        a.pop("close_series", None)
     out_path = f"output/analysis_{dt.date.today().isoformat()}.json"
     with open(out_path, "w") as fp:
-        json.dump({"profile": profile, "analyses": analyses, "result": result}, fp, indent=2)
+        json.dump(
+            {"profile": profile, "market_context": {k: v for k, v in mkt.items() if k != "close_series"},
+             "analyses": analyses, "results_by_tier": results_by_tier},
+            fp, indent=2,
+        )
     print(f"\nSaved full analysis to {out_path}")
 
 
-def format_alert(result: dict) -> str:
+def _resolve_risk_tiers(profile: dict) -> list:
+    """
+    The dashboard lets an investor pick MULTIPLE risk-appetite tiers (e.g.
+    conservative + aggressive) to see how the same market looks at each
+    level. Normalise whatever the profile has into a list of tiers to run.
+    """
+    tiers = (profile or {}).get("risk_appetites")
+    if tiers:
+        return list(dict.fromkeys(tiers))  # de-dupe, keep order
+    single = (profile or {}).get("risk_appetite")
+    return [single] if single else ["moderate"]
+
+
+TIER_LABELS = {
+    "conservative": "🟢 CONSERVATIVE profile",
+    "moderate": "🟡 MODERATE profile",
+    "aggressive": "🔴 AGGRESSIVE profile",
+}
+CONVICTION_EMOJI = {"HIGH": "🔥", "LOW": "👀"}
+
+
+def format_alert(results_by_tier: dict) -> str:
     lines = ["*AI Equity Analyst — Today's Shortlist*", ""]
-    for i, pick in enumerate(result.get("shortlist", []), 1):
-        lines.append(f"{i}. *{pick['symbol']}*  ({pick.get('conviction','?')} conviction)")
-        lines.append(f"   {pick.get('thesis','')}")
-        lines.append(f"   ⚠ Risk: {pick.get('key_risk','')}")
-        lines.append("")
-    if result.get("summary"):
-        lines.append("_" + result["summary"] + "_")
+    lines.append(
+        "_🔥 HIGH CONVICTION = data lines up cleanly, worth acting on. "
+        "👀 LOW CONVICTION = a watch-list idea, treat with caution._"
+    )
     lines.append("")
-    lines.append("Not investment advice. Do your own research.")
+
+    multi_tier = len(results_by_tier) > 1
+    for tier, result in results_by_tier.items():
+        if multi_tier:
+            lines.append(f"━━━ {TIER_LABELS.get(tier, tier.upper())} ━━━")
+            lines.append("")
+        for i, pick in enumerate(result.get("shortlist", []), 1):
+            conv = pick.get("conviction", "?")
+            conv_emoji = CONVICTION_EMOJI.get(conv, "")
+            lines.append(f"{i}. *{pick['symbol']}*  {conv_emoji} {conv} CONVICTION  "
+                         f"(opportunity {pick.get('opportunity_score', '?')}/100, "
+                         f"confidence {pick.get('confidence', '?')}%)")
+            if pick.get("conviction_note"):
+                lines.append(f"   _{pick['conviction_note']}_")
+            lines.append(f"   Stance: *{pick.get('action', '?').upper()}*")
+            if pick.get("current_price") is not None:
+                lines.append(f"   Current price: ₹{pick['current_price']:.2f}")
+            perf = pick.get("performance", {})
+            for label, key in (("1w", "1w"), ("1m", "1m"), ("6m", "6m")):
+                if key in perf:
+                    p = perf[key]
+                    lines.append(f"   {label}: {p['change_pct']:+.1f}% (high ₹{p['high']:.2f}, low ₹{p['low']:.2f})")
+            lines.append(f"   Risk: {pick.get('risk_percent', '?')}%")
+            lines.append(f"   Bull case: {pick.get('bull_case', pick.get('thesis', ''))}")
+            if pick.get("bear_case"):
+                lines.append(f"   Bear case: {pick['bear_case']}")
+            if pick.get("near_term_outlook"):
+                lines.append(f"   Near-term outlook: {pick['near_term_outlook']}")
+            if pick.get("target_price") is not None:
+                lines.append(
+                    f"   Reference target: ₹{pick['target_price']:.2f} — {pick.get('target_price_rationale', '')}"
+                )
+            qty = pick.get("suggested_quantity", {})
+            if qty.get("max") is not None:
+                lines.append(f"   Position-size cap: {qty['min']}–{qty['max']} shares max ({qty.get('note', '')})")
+            elif qty.get("note"):
+                lines.append(f"   Position-size cap: n/a — {qty['note']}")
+            if pick.get("allocated_amount") is not None:
+                shares_txt = f" (~{pick['allocated_shares']} shares)" if pick.get("allocated_shares") else ""
+                lines.append(f"   💰 Suggested allocation today: ₹{pick['allocated_amount']:,}{shares_txt}")
+            if pick.get("portfolio_fit"):
+                lines.append(f"   Portfolio fit: {pick['portfolio_fit']} — {pick.get('portfolio_fit_note', '')}")
+            if pick.get("invalidation"):
+                lines.append(f"   What would change this view: {pick['invalidation']}")
+            lines.append(f"   ⚠ Key risk: {pick.get('key_risk', '')}")
+            lines.append("")
+
+        cap = result.get("capital_summary", {})
+        if cap.get("total_allocated") is not None:
+            lines.append(
+                f"   Capital split: ₹{cap['total_allocated']:,} deployed of "
+                f"₹{cap['total_capital']:,} (₹{cap['cash_remaining']:,} left in cash)"
+            )
+            lines.append("")
+
+        if result.get("summary"):
+            lines.append("_" + result["summary"] + "_")
+        lines.append("")
+
+    lines.append("⚠️ Not investment advice — AI-generated analysis for informational "
+                  "purposes only. Do your own research and consult a SEBI-registered "
+                  "advisor before investing.")
     return "\n".join(lines)
 
 

@@ -13,7 +13,30 @@
       "Bash(grep -v \"^$\")",
       "Bash(curl -s -A \"Mozilla/5.0\" \"https://news.google.com/rss/search?q=HCLTECH%20NSE%20stock&hl=en-IN&gl=IN&ceid=IN:en\" --max-time 15)",
       "Bash(DATA_MODE=live uv run python -c ' *)",
-      "Bash(DATA_MODE=live UNIVERSE=HCLTECH,INFY,TCS TOP_N=2 uv run python run.py)"
+      "Bash(DATA_MODE=live UNIVERSE=HCLTECH,INFY,TCS TOP_N=2 uv run python run.py)",
+      "Bash(UNIVERSE=HCLTECH,INFY,TCS TOP_N=2 uv run python run.py)",
+      "Bash(UNIVERSE=NOTAREALSYMBOL uv run python run.py)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8502)",
+      "Bash(kill 97658)",
+      "Bash(curl -s http://localhost:8502/_stcore/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8503)",
+      "Bash(kill 62041)",
+      "Bash(uv run python -c ' *)",
+      "Bash(UNIVERSE=HCLTECH,INFY,TCS,ASIANPAINT,MARUTI TOP_N=2 uv run python run.py)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8504)",
+      "Bash(cp /tmp/test_profile.json profile/_dashboard/profile.json)",
+      "Bash(UNIVERSE=TCS,INFY,HCLTECH PROFILE_PATH=profile/_dashboard/profile.json TOP_N=1 uv run python run.py)",
+      "Bash(UNIVERSE=TCS,INFY,HCLTECH TOP_N=1 uv run python run.py)",
+      "Bash(UNIVERSE=TCS,INFY,HCLTECH TOP_N=1 uv run python -c ' *)",
+      "Bash(grep -c '```mermaid' README.md HOW_IT_WORKS.md)",
+      "Bash(grep -c '^```$' README.md HOW_IT_WORKS.md)",
+      "Bash(grep -c '^```' README.md)",
+      "Bash(grep -c '^```' HOW_IT_WORKS.md)",
+      "Bash(UNIVERSE=TCS TOP_N=1 uv run python run.py)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(TOP_N=6 UNIVERSE=NIFTY50 timeout 115 uv run python -c ' *)",
+      "Bash(UNIVERSE=TCS,INFY,HCLTECH,RELIANCE,SBIN TOP_N=3 PROFILE_PATH=\"/private/tmp/claude-503/-Users-dikbhati1-Downloads-ai-equity-analyst/32b8d71d-4c28-4904-938f-3df18d68b1e1/scratchpad/test_profile.json\" uv run python run.py)"
     ]
   }
 }

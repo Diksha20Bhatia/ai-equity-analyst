@@ -4,3 +4,4 @@ __pycache__/
 memory/_store/
 output/*.json
 data/cache/
+profile/_dashboard/

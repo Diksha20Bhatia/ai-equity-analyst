@@ -1,36 +1,60 @@
 """
 technical_agent.py  —  "The Chart Reader"
 =========================================
-Looks only at price and volume behaviour: is the stock trending up, is it
-breaking out, is the move backed by real volume? Produces a 0-10 score.
-The indicators (trend, RSI, breakout) are computed in data/market_data.py;
-this agent interprets them.
+Pure code, ZERO AI calls. Trend structure, RSI, relative strength vs the
+Nifty 50, breakout/near-high status and volume confirmation are all real
+numbers computed in data/signals.py from real price history. Turning them
+into a score is a fixed, transparent rule set — reading a chart is exactly
+the kind of "compute a number from other numbers" task that doesn't need
+an LLM.
 """
 
-from agents.base_agent import BaseAgent
+from observability import traceable
+
+_TREND_LABELS = {
+    "strong_uptrend": "Strong uptrend",
+    "possible_recovery": "Possible recovery",
+    "downtrend": "Downtrend",
+    "sideways": "Sideways",
+}
 
 
-class TechnicalAgent(BaseAgent):
+class TechnicalAgent:
     name = "Technical Agent"
-    system_instruction = (
-        "You are a technical analyst for Indian equities. You read trend "
-        "strength, breakouts and volume confirmation. You give a technical "
-        "score from 0 (bearish) to 10 (strong bullish setup) and a one-line read."
-    )
 
+    @traceable(run_type="tool", name="Technical Agent")
     def run(self, symbol: str, technicals: dict) -> dict:
         t = technicals
-        prompt = (
-            f"Company: {symbol}\n"
-            f"Price vs 50-day avg: {t['above_sma50']}\n"
-            f"Price vs 200-day avg: {t['above_sma200']}\n"
-            f"14-day RSI: {t['rsi']:.0f}\n"
-            f"Near 52-week high: {t['near_high']}\n"
-            f"Volume vs average: {t['volume_ratio']:.1f}x\n\n"
-            "Assess the technical setup. Reply as JSON: "
-            '{"score": <0-10>, "read": "one line"}'
+        score = 5.0
+
+        trend = t.get("trend_structure", "sideways")
+        score += {"strong_uptrend": 2.5, "possible_recovery": 0.5, "downtrend": -2.5, "sideways": 0}[trend]
+
+        rsi = t.get("rsi", 50)
+        if rsi > 70:
+            score -= 1  # overbought
+        elif rsi < 30:
+            score -= 0.5  # weak/oversold
+
+        if t.get("near_high"):
+            score += 1
+        if t.get("volume_ratio", 1) > 1.5:
+            score += 1
+
+        rel = t.get("relative_strength_vs_nifty", {})
+        if rel.get("1m", 0) > 0:
+            score += 0.5
+        if rel.get("3m", 0) > 0:
+            score += 0.5
+
+        score = max(0, min(10, round(score, 1)))
+        trend_label = _TREND_LABELS[trend]
+        read = (
+            f"{trend_label}, RSI {rsi}, "
+            f"{'near' if t.get('near_high') else 'off'} 52-week highs, "
+            f"{t.get('volume_ratio', 1):.1f}x volume"
+            + (f", {rel['1m']:+.1f}% vs Nifty over 1m" if "1m" in rel else "")
+            + (f", ATR ₹{t['atr']:.2f} (typical daily range)" if "atr" in t else "")
+            + "."
         )
-        result = self.ask_json(prompt)
-        if "score" not in result:
-            raise RuntimeError(f"[{self.name}] response missing 'score' for {symbol}: {result}")
-        return {"symbol": symbol, **result}
+        return {"symbol": symbol, "score": score, "read": read, "trend": trend_label}

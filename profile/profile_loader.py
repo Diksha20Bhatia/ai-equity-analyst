@@ -1,15 +1,21 @@
 """
 profile_loader.py  —  "Your preferences, in any format"
 =======================================================
-Reads an investor profile from .txt / .md / .pdf / .html / .docx, then uses
-Gemini to normalise the messy text into ONE clean structured object the
-Decision Agent can act on. If Gemini is unavailable it does a light
-keyword-based extraction instead.
+Reads an investor profile from .txt / .md / .pdf / .html / .docx / .xlsx,
+then uses Gemini to normalise the messy text into ONE clean structured
+object the Decision Agent can act on. If Gemini is unavailable it does a
+light keyword-based extraction instead.
+
+A .json profile is treated as ALREADY structured (e.g. built from the
+dashboard's dropdown form) and loaded directly — no Gemini call needed,
+which is also a free win for the app's token budget.
 
 Returned shape:
   {
     "risk_appetite": "...",
     "capital_available": "...",
+    "capital_numeric": 500000 or null,      # INR, only if a real number was stated
+    "max_position_pct": 15 or null,         # only if a real max-position rule was stated
     "investment_horizon": "...",
     "sector_preferences": [...],
     "sector_exclusions": [...],
@@ -59,6 +65,21 @@ def _read_text(path: str) -> str:
             print("[profile] python-docx not installed; cannot read DOCX.")
             return ""
 
+    if ext == ".xlsx":
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(path, data_only=True)
+            lines = []
+            for sheet in wb.worksheets:
+                for row in sheet.iter_rows(values_only=True):
+                    cells = [str(c) for c in row if c is not None]
+                    if cells:
+                        lines.append(" | ".join(cells))
+            return "\n".join(lines)
+        except ImportError:
+            print("[profile] openpyxl not installed; cannot read XLSX.")
+            return ""
+
     print(f"[profile] unsupported format: {ext}")
     return ""
 
@@ -73,10 +94,14 @@ def _structure_with_gemini(raw: str) -> dict:
         from google.genai import types
         prompt = (
             "Read this investor profile and extract the fields below. "
-            "If a field is missing, use a sensible default or empty list.\n\n"
+            "If a field is missing, use a sensible default or empty list. "
+            "capital_numeric and max_position_pct must be null unless the text states "
+            "an actual number — never estimate or guess them.\n\n"
             f"PROFILE TEXT:\n{raw}\n\n"
             'Reply as JSON only: {"risk_appetite": "conservative/moderate/aggressive", '
-            '"capital_available": "string", "investment_horizon": "short/medium/long", '
+            '"capital_available": "string", "capital_numeric": <INR number or null>, '
+            '"max_position_pct": <number 0-100 or null>, '
+            '"investment_horizon": "short/medium/long", '
             '"sector_preferences": [..], "sector_exclusions": [..], "constraints": "string"}'
         )
         resp = client.models.generate_content(
@@ -111,6 +136,8 @@ def _structure_with_keywords(raw: str) -> dict:
     return {
         "risk_appetite": risk,
         "capital_available": "",
+        "capital_numeric": None,   # keyword scan can't reliably extract a real number
+        "max_position_pct": None,
         "investment_horizon": horizon,
         "sector_preferences": [],
         "sector_exclusions": exclusions,
@@ -125,6 +152,15 @@ def load_profile(path: str) -> dict:
     if not path or not os.path.exists(path):
         print("[profile] no profile file found — running without personalisation.")
         return {}
+
+    if path.lower().endswith(".json"):
+        with open(path, "r", encoding="utf-8") as f:
+            structured = json.load(f)
+        risk_label = "/".join(structured.get("risk_appetites") or [structured.get("risk_appetite", "?")])
+        print(f"[profile] loaded pre-structured profile ({risk_label} risk) "
+              "— no Gemini call needed.")
+        return structured
+
     raw = _read_text(path)
     if not raw.strip():
         return {}
