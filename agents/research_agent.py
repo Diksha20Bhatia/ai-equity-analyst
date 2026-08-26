@@ -17,7 +17,7 @@ class ResearchAgent:
     name = "Research Agent"
 
     @traceable(run_type="tool", name="Research Agent (Scout)")
-    def run(self, activity: list, market_pct_change: float, watchlist_size: int = 5) -> dict:
+    def run(self, activity: list, market_pct_change: float, watchlist_size: int = 10) -> dict:
         scored = []
         for a in activity:
             relative_move = round(a["pct_change"] - market_pct_change, 2)

@@ -97,7 +97,7 @@ def main():
 
     research = ResearchAgent()
     scan = research.run(activity, market_pct_change=mkt["nifty_pct_change"],
-                         watchlist_size=min(5, len(bundles)))
+                         watchlist_size=min(10, len(bundles)))
     watchlist = scan["watchlist"]
     for sym in watchlist:
         print(f"  • {sym}: {scan['notes'].get(sym, '')}")

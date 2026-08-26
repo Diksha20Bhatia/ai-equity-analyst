@@ -9,6 +9,14 @@ companies every morning, a team of AI "specialists" does it for you and
 hands you a short, reasoned shortlist of 2–3 high-conviction ideas — with
 its reasoning shown, not hidden.
 
+There are **two separate pipelines**:
+
+- **Swing** (`run.py`) — runs once a day, looks at a year of history, and
+  produces multi-day/multi-week ideas with a full investment thesis.
+- **Intraday** (`intraday_run.py`) — runs on demand *while the market is
+  open*, watches today's price action minute-by-minute, and flags real
+  opening-range breakouts.
+
 > **Not a chatbot. Not a buy/sell signal generator.**
 > A workflow that *observes → reasons → prioritises → acts*.
 >
@@ -17,35 +25,51 @@ its reasoning shown, not hidden.
 > can't be reached, the app stops and shows you the real error — it never
 > quietly substitutes a fake number to keep going.
 >
-> **Only ~2 AI calls per run**, no matter how big the universe is. Most of
-> what looks like "AI analysis" is actually plain, transparent math on real
-> data — AI is reserved for the two things a formula genuinely can't do:
-> reading news, and weighing conflicting evidence into a final call.
+> **~2 AI calls per swing run, ~1 per intraday scan**, no matter how big
+> the universe is. Most of what looks like "AI analysis" is actually plain,
+> transparent math on real data — AI is reserved for the things a formula
+> genuinely can't do: reading news, explaining a score, and weighing
+> conflicting evidence into a final call.
 
 📖 **Want the deep-dive?** [HOW_IT_WORKS.md](HOW_IT_WORKS.md) walks through
 every agent, every file, every API call and every formula in plain English
 with worked examples — this README is the map, that document is the tour.
 
+📋 **Presenting this to someone non-technical?** [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
+is a short, manager-facing summary — architecture, agents, AI-call costs,
+nothing else.
+
 ---
 
 ## 📖 Read this first (the idea in plain English)
 
-Think of it like **hiring a small team**. Four of them are pure calculators
-(no AI, just real numbers and formulas); two are the ones who actually
-"think."
+Think of it like **hiring a small research team**. Most of them are pure
+calculators (no AI, just real numbers and formulas); a handful are the
+ones who actually "think."
+
+### The Swing crew — runs once a day
 
 | Who | Nickname | What they do | AI calls? |
 |-----|----------|---------------|-----------|
-| **Research Agent** | The Scout | Scores every stock by a real "anomaly score" — move vs the Nifty 50, unusual volume, breakouts, gaps — and picks the ~5 most unusual. | **0** — pure math |
+| **Research Agent** | The Scout | Scores every stock by a real "anomaly score" — move vs the Nifty 50, unusual volume, breakouts, gaps — and picks the ~10 most unusual. | **0** — pure math |
 | **Fundamental Agent** | The Analyst | Scores business quality from real revenue growth, ROE, margins, debt, cash flow, and valuation vs the stock's *own* historical range. | **0** — pure math |
 | **Technical Agent** | The Chart Reader | Scores the real price chart — trend structure, RSI, relative strength vs Nifty, breakouts. | **0** — pure math |
 | **Risk Agent** | The Skeptic | Scores downside risk from real volatility, beta, max drawdown, liquidity, gap risk. | **0** — pure math |
 | **News/Event Reader** | (was "Sentiment Agent") | Reads real, deduplicated headlines for **all** shortlisted stocks and extracts what happened, how material it is, and the sentiment. | **1**, batched across every stock |
-| **Decision Agent** | The Manager | Weighs every real signal above plus your profile and produces the final shortlist — bull case, bear case, confidence, target price, portfolio fit. | **1**, batched across every stock |
+| **Decision Agent** | The Manager | Weighs every real signal above plus your profile and produces the final shortlist — bull case, bear case, confidence, target price, a real ₹ split across your picks. Runs once per risk-appetite tier you selected. | **1 per risk tier**, batched across every stock |
+
+### The Intraday crew — runs on demand, market hours only
+
+| Who | Nickname | What they do | AI calls? |
+|-----|----------|---------------|-----------|
+| **Intraday Agent** | The Day Trader | Mechanically scores today's price action — opening-range breakout, VWAP position, volume surge, momentum since the open. | **0** — pure math |
+| **Data Sentinel** | — | A pre-scoring gate. Stale/broken data is caught in plain code; only an unusually large, otherwise-clean overnight price gap gets a real AI judgment call. | **0 or 1**, only when a gap needs review |
+| **Narrator** | — | Writes a plain-English explanation of *why* each top pick scored the way it did, and tags the shape of today's chart. Write-only — it explains the score, it can never change it. | **1**, top picks only |
+| **Scorekeeper** *(optional)* | — | Run separately after market close: compares today's picks to what actually happened (target/stop/neither) — a factual report card. | **1**, only if you run it |
 
 The big shift: instead of **you** reading everything, the system reads it,
 argues it out internally, and gives you a short answer you can act on — and
-it does that for ~₹1-2 worth of AI tokens per run, not per stock.
+it does that for a couple of AI calls per run, not per stock.
 
 ---
 
@@ -54,60 +78,72 @@ it does that for ~₹1-2 worth of AI tokens per run, not per stock.
 ```mermaid
 flowchart TB
     subgraph External["🌐 External services (all real, mostly free)"]
-        Gemini[("Google Gemini<br/>Vertex AI or AI Studio<br/>— needs a key<br/>~2 calls/run")]
+        Gemini[("Google Gemini<br/>Vertex AI or AI Studio<br/>— needs a key")]
         Yahoo[("Yahoo Finance<br/>via yfinance<br/>— free, keyless")]
         GNews[("Google News RSS<br/>— free, keyless")]
         NSEArc[("NSE archives<br/>Nifty 50 / 500 lists<br/>— free, keyless")]
         TG[("Telegram Bot API<br/>— needs a bot token")]
+        LS[("LangSmith<br/>— optional, free tier")]
     end
 
-    subgraph App["ai-equity-analyst"]
-        Config["config.py<br/>settings + Gemini client"]
-        Signals["data/signals.py<br/>pure-math indicators<br/>RSI, ATR, beta, drawdown..."]
+    subgraph SwingApp["Swing pipeline"]
         MktCtx["data/market_context.py<br/>real Nifty 50, once per run"]
         MarketData["data/market_data.py<br/>real prices, fundamentals, news"]
-        Universe["data/nse_universe.py<br/>index constituent lists"]
-        ZeroAI["agents/research_.. fundamental_..<br/>technical_.. risk_agent.py<br/>0 AI calls — pure code"]
-        EventDecision["agents/sentiment_agent.py +<br/>decision_agent.py<br/>the only 2 AI calls"]
-        Memory["memory/memory_layer.py<br/>real price/score deltas"]
-        Profile["profile/profile_loader.py"]
-        Run["run.py — the conductor"]
-        Dashboard["dashboard.py — Streamlit UI"]
-        Alert["alerts/telegram_alert.py"]
-        Output[("output/analysis_*.json")]
+        Universe["data/nse_universe.py"]
+        ZeroAI["4 zero-AI agents<br/>Scout · Analyst · Chart Reader · Skeptic"]
+        EventDecision["News/Event Reader +<br/>Decision Agent<br/>AI, once per risk tier"]
+        Run["run.py"]
     end
 
-    Yahoo --> MarketData
-    Yahoo --> MktCtx
+    subgraph IntraApp["Intraday pipeline"]
+        IntraData["data/intraday_data.py<br/>real 5-min bars, today only"]
+        IntraAgent["Intraday Agent — 0 AI"]
+        Sentinel["Data Sentinel — AI, only if needed"]
+        Narrator["Narrator — AI, top picks only"]
+        IntraRun["intraday_run.py"]
+    end
+
+    subgraph Shared["Shared"]
+        Config["config.py + observability.py"]
+        Memory["memory/memory_layer.py"]
+        Profile["profile/profile_loader.py"]
+        Dashboard["dashboard.py — Streamlit UI"]
+        Alert["alerts/telegram_alert.py"]
+        Output[("output/*.json")]
+    end
+
+    Yahoo --> MarketData & MktCtx & IntraData
     GNews --> MarketData
     NSEArc --> Universe
-    MarketData --> Signals
-    Gemini --> EventDecision
-    Gemini --> Profile
-    Config --> EventDecision
-    Config --> Profile
+    Gemini --> Config
+    Config --> EventDecision & Sentinel & Narrator & Profile
     MarketData --> Run
     MktCtx --> Run
     Universe --> Run
     ZeroAI --> Run
     EventDecision --> Run
+    IntraData --> IntraAgent --> IntraRun
+    Sentinel --> IntraRun
+    Narrator --> IntraRun
     Memory --> Run
     Profile --> Run
     Run --> Alert --> TG
+    IntraRun --> Alert
     Run --> Output --> Dashboard
-    Dashboard -. "▶ Run analysis now" .-> Run
+    IntraRun --> Output
+    Gemini -.->|traced if enabled| LS
+    Dashboard -. "▶ Run swing / ⚡ Run intraday" .-> Run & IntraRun
     Dashboard -. "upload / fill profile form" .-> Profile
-    MarketData --> Dashboard
 ```
 
 **No MCP servers are used anywhere in this app.** Every connection above is a
 plain, direct HTTP call or SDK call — `requests` for Google News/NSE/Telegram,
-the `yfinance` library for Yahoo Finance, and the `google-genai` SDK for
-Gemini.
+the `yfinance` library for Yahoo Finance, the `google-genai` SDK for Gemini,
+and the `langsmith` SDK (optional) for tracing.
 
 ---
 
-## 🔁 What happens during one run — step by step
+## 🔁 What happens during one swing run — step by step
 
 ```mermaid
 sequenceDiagram
@@ -119,7 +155,7 @@ sequenceDiagram
     participant Specs as Fundamental / Technical /<br/>Risk agents (0 AI)
     participant Event as News/Event Reader (1 AI call)
     participant Mem as Memory
-    participant DA as Decision Agent (1 AI call)
+    participant DA as Decision Agent (1 AI call<br/>per risk tier)
     participant TG as Telegram
 
     You->>Run: python run.py
@@ -127,23 +163,53 @@ sequenceDiagram
     Run->>Data: fetch real prices, fundamentals,<br/>headlines for the universe
     Data-->>Run: one data "bundle" per stock (bad symbols skipped, not crashed on)
     Run->>Scout: real anomaly score for every stock
-    Scout-->>Run: watchlist of ~5 most unusual names
+    Scout-->>Run: watchlist of ~10 most unusual names
     Run->>Specs: score fundamentals / chart / risk — pure math
     Specs-->>Run: real 0-10 scores + plain-English reasoning
     Run->>Event: ALL watchlist stocks' deduped headlines, in ONE call
     Event-->>Run: sentiment + event type + materiality per stock
     Run->>Mem: what changed since the last call on each stock (real deltas)
-    Run->>DA: everything above + real market context + your profile, in ONE call
-    DA-->>Run: shortlist — opportunity score, confidence, bull/bear case, target
+    Run->>DA: everything above + real market context + your profile,<br/>once per selected risk tier
+    DA-->>Run: shortlist per tier — opportunity score, confidence,<br/>bull/bear case, target, ₹ split
     Run->>Mem: store today's real scores for next time
     Run->>TG: send the shortlist (or print it, if not configured)
     Run->>You: save output/analysis_DATE.json
 ```
 
 If **any** step fails — Gemini unreachable, Yahoo rate-limiting a symbol —
-that step raises with a full error. A single bad symbol is now *skipped*
-(logged, not fatal) since the data-quality gate was added; a Gemini outage
-still stops the whole run, since there's no fallback to silently degrade to.
+that step raises with a full error. A single bad symbol is *skipped*
+(logged, not fatal) thanks to the data-quality gate; a Gemini outage still
+stops the whole run, since there's no fallback to silently degrade to.
+
+## ⚡ What happens during an intraday scan — step by step
+
+```mermaid
+sequenceDiagram
+    participant You
+    participant Run as intraday_run.py
+    participant Data as intraday_data.py
+    participant Quality as Code quality checks (0 AI)
+    participant Sentinel as Data Sentinel (0-1 AI call)
+    participant Score as Intraday Agent (0 AI)
+    participant Narr as Narrator (1 AI call)
+    participant TG as Telegram
+
+    You->>Run: python intraday_run.py
+    Run->>Data: fetch real 5-min bars for the universe
+    Data-->>Run: today's bars, per stock
+    Run->>Quality: stale bars / zero volume / bad prints — exclude, no AI
+    Run->>Sentinel: ONLY stocks with an unusual overnight gap
+    Sentinel-->>Run: usable or excluded, with an honest caveat
+    Run->>Score: opening-range breakout / VWAP / volume-surge rules
+    Score-->>Run: score, direction, conviction — fixed, deterministic
+    Run->>Narr: top picks only — explain, don't decide
+    Narr-->>Run: narrative + pattern tag (write-only, never changes score)
+    Run->>TG: send the picks
+    Run->>You: save output/intraday_scan_DATE_TIME.json
+```
+
+Only meaningful while the NSE cash market is open (09:15–15:30 IST) —
+outside those hours there are no fresh bars to score.
 
 ---
 
@@ -151,32 +217,41 @@ still stops the whole run, since there's no fallback to silently degrade to.
 
 ```
 ai-equity-analyst/
-├── run.py                    ← the ONE file that runs the full pipeline
-├── dashboard.py               ← Streamlit UI: profile builder, browse runs, trigger a run
-├── config.py                  ← reads .env, logs in to Gemini
-├── .env.example                ← copy this to .env and add your settings
-├── requirements.txt             ← the Python libraries to install
-├── sample_profile.txt            ← an example investor profile you can edit
+├── run.py                        ← runs the full SWING pipeline
+├── intraday_run.py                ← runs the full INTRADAY pipeline
+├── intraday_backtest.py            ← optional end-of-day report card for today's intraday picks
+├── dashboard.py                     ← Streamlit UI: profile builder, browse runs, trigger a run
+├── config.py                         ← reads .env, logs in to Gemini
+├── observability.py                   ← optional LangSmith tracing (no-op if not configured)
+├── .env.example                        ← copy this to .env and add your settings
+├── requirements.txt                     ← the Python libraries to install
+├── sample_profile.txt                    ← an example investor profile you can edit
 │
 ├── agents/
-│   ├── base_agent.py          ← shared skill: "ask Gemini, get JSON back, or raise"
-│   ├── research_agent.py      ← The Scout — 0 AI calls, real anomaly scoring
-│   ├── fundamental_agent.py   ← The Analyst — 0 AI calls, real business-quality scoring
-│   ├── technical_agent.py     ← The Chart Reader — 0 AI calls, real chart scoring
-│   ├── risk_agent.py          ← The Skeptic — 0 AI calls, real risk scoring
-│   ├── sentiment_agent.py     ← News/Event Reader — 1 batched AI call for all stocks
-│   └── decision_agent.py      ← The Manager — 1 batched AI call for all stocks
+│   ├── base_agent.py              ← shared skill: "ask Gemini, get JSON back, or raise" — traced here
+│   ├── research_agent.py          ← The Scout — 0 AI calls, real anomaly scoring
+│   ├── fundamental_agent.py       ← The Analyst — 0 AI calls, real business-quality scoring
+│   ├── technical_agent.py         ← The Chart Reader — 0 AI calls, real chart scoring
+│   ├── risk_agent.py              ← The Skeptic — 0 AI calls, real risk scoring
+│   ├── sentiment_agent.py         ← News/Event Reader — 1 batched AI call for all stocks
+│   ├── decision_agent.py          ← The Manager — 1 batched AI call per risk tier, + real ₹ allocation
+│   ├── intraday_agent.py          ← The Day Trader — 0 AI calls, real ORB/VWAP/volume scoring
+│   ├── intraday_quality_agent.py  ← Data Sentinel — 0-1 AI call, only for unusual gaps
+│   ├── intraday_narrator_agent.py ← Narrator — 1 batched AI call, top picks only, write-only fields
+│   └── intraday_backtest_agent.py ← Scorekeeper — 1 AI call, optional, end-of-day only
 │
 ├── data/
-│   ├── market_data.py         ← real prices/fundamentals/news/liquidity (Yahoo + Google News)
-│   ├── signals.py             ← pure-math indicators: RSI, ATR, beta, drawdown, volatility...
-│   ├── market_context.py      ← real Nifty 50 fetched once per run
-│   └── nse_universe.py        ← fetches live Nifty 50 / Nifty 500 lists from NSE
+│   ├── market_data.py             ← real prices/fundamentals/news/liquidity (Yahoo + Google News)
+│   ├── signals.py                 ← pure-math indicators: RSI, ATR, beta, drawdown, volatility...
+│   ├── market_context.py          ← real Nifty 50 fetched once per run
+│   ├── nse_universe.py            ← fetches live Nifty 50 / Nifty 500 lists from NSE
+│   ├── intraday_data.py           ← real 5-minute bars, today's session only
+│   └── intraday_signals.py        ← pure-math intraday indicators: VWAP, opening range, volume surge
 │
-├── memory/memory_layer.py     ← The Notebook — real price/score deltas since your last call
-├── profile/profile_loader.py  ← reads your profile file (PDF/XLSX/HTML/DOCX/TXT/JSON)
-├── alerts/telegram_alert.py   ← sends the shortlist to Telegram (or prints it)
-└── output/                    ← each run's full analysis, saved as JSON
+├── memory/memory_layer.py         ← The Notebook — real price/score deltas since your last call
+├── profile/profile_loader.py      ← reads your profile file (PDF/XLSX/HTML/DOCX/TXT/JSON)
+├── alerts/telegram_alert.py       ← sends the shortlist to Telegram (or prints it); splits long alerts
+└── output/                        ← each run's full analysis, saved as JSON
 ```
 
 For exactly what each file does internally — every function, every real
@@ -188,17 +263,20 @@ formula, every API endpoint — see **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
 
 | Source | What it provides | Used by | Key needed? |
 |---|---|---|---|
-| **Google Gemini** | News interpretation + final decision synthesis (~2 calls/run) | `agents/sentiment_agent.py`, `agents/decision_agent.py`, plus profile structuring | ✅ yes |
-| **Yahoo Finance** (`yfinance`) | Real daily price/volume/OHLC history, real company fundamentals (ROE, margins, debt, cash flow, valuation ratios), the Nifty 50 index itself | `data/market_data.py`, `data/market_context.py` | ❌ free |
+| **Google Gemini** | News interpretation, final decision synthesis, intraday narration/gap review | `agents/*.py` (5 of the 10 agents), plus profile structuring | ✅ yes |
+| **Yahoo Finance** (`yfinance`) | Real daily *and* 5-minute price/volume history, real company fundamentals, the Nifty 50 index itself | `data/market_data.py`, `data/market_context.py`, `data/intraday_data.py` | ❌ free |
 | **Google News RSS** | Real, current headlines per stock | `data/market_data.py` (fetch) → `agents/sentiment_agent.py` (interpret) | ❌ free |
 | **NSE archives** | Official Nifty 50 / Nifty 500 constituent symbol lists | `data/nse_universe.py` | ❌ free |
 | **Telegram Bot API** | Delivers the finished shortlist to your phone | `alerts/telegram_alert.py` | ✅ yes (optional) |
 | **ChromaDB** (local) | Stores real price/score history per stock for the audit/delta system | `memory/memory_layer.py` | ❌ local, no key |
+| **LangSmith** | Optional: traces every AI call and pipeline step for auditing/debugging | `observability.py` | ✅ yes (optional, free tier) |
 | **your file or the dashboard form** | Your investor profile | `profile/profile_loader.py` | ❌ local |
 
 Everything else — RSI, moving averages, beta, drawdown, volatility, ATR,
-relative strength, anomaly scores, position sizing — is **plain Python math**
-on the real numbers above, computed in `data/signals.py`. No API, no AI.
+relative strength, anomaly scores, opening-range breakouts, VWAP, position
+sizing, capital allocation — is **plain Python math** on the real numbers
+above, computed in `data/signals.py` and `data/intraday_signals.py`. No
+API, no AI.
 
 ---
 
@@ -217,6 +295,10 @@ on the real numbers above, computed in `data/signals.py`. No API, no AI.
 - **No earnings-calendar / event-proximity risk** — flagging "results due in
   3 days" needs a free, reliable earnings calendar source, which wasn't
   wired in.
+- **The Data Sentinel can't confirm corporate actions** — it has no
+  corporate-actions calendar, so on a large overnight gap it can only say
+  "this looks like it could be a split/bonus" or "usable, but unconfirmed"
+  — never a certain answer.
 
 ---
 
@@ -267,9 +349,12 @@ cp .env.example .env
    ```
 
 > `GOOGLE_AUTH_MODE=auto` tries Vertex AI first, then falls back to the API
-> key — handy if you're not sure which will work.
+> key — handy if you're not sure which will work. Note: if
+> `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, the SDK routes through Vertex even in
+> token mode — set it to `FALSE` if you want the API key to actually hit
+> AI Studio instead.
 
-**Step 5 — Run it**
+**Step 5 — Run the swing scan**
 ```bash
 uv run python run.py       # or: python run.py
 ```
@@ -279,11 +364,16 @@ when it worked. If it says `NOT CONNECTED`, `run.py` stops immediately with
 the reason — fix `.env` and re-run. Market data (Yahoo Finance, Google
 News, NSE lists) needs no key at all.
 
+**Step 6 — Try the intraday scanner** (during market hours, 09:15–15:30 IST)
+```bash
+uv run python intraday_run.py
+```
+
 ---
 
 ## 📊 Using the dashboard
 
-A Streamlit UI sits on top of the same pipeline:
+A Streamlit UI sits on top of both pipelines:
 
 ```bash
 uv run streamlit run dashboard.py
@@ -293,20 +383,27 @@ Opens at `http://localhost:8501`. From there you can:
 
 - **Build your investor profile** — optionally upload a PDF/XLSX/DOCX
   document (parsed automatically), and always fill in a dropdown form
-  (risk appetite, capital, horizon, preferred/excluded sectors, max
-  position size). Your form answers always win over the document; whichever
-  fields the form doesn't cover are filled from the document if you
-  uploaded one. Saved as JSON — which the next run loads **without an extra
-  Gemini call**, since it's already structured.
-- **Browse any past run** — pick a date, see the shortlist as cards
-  (opportunity score, confidence, bull/bear case, action, portfolio fit,
-  suggested quantity), and expand each stock for its real score breakdown,
-  6-month price chart, and the real headlines behind its news verdict.
+  (risk appetite — now a **multi-select**, so you can compare e.g.
+  Conservative vs Aggressive shortlists side by side — capital, horizon,
+  preferred/excluded sectors, max position size). Every field that isn't
+  obvious has a plain-English tooltip explaining what it means and why it
+  matters. Your form answers always win over the document. Saved as JSON
+  — which the next run loads **without an extra Gemini call**.
+- **Browse any past swing run** — pick a date, see the shortlist as cards
+  per risk tier (opportunity score, confidence, HIGH/LOW conviction with a
+  plain-English reason, bull/bear case, suggested ₹ allocation), and expand
+  each stock for its real score breakdown, 6-month price chart, and the
+  real headlines behind its news verdict. A glossary expander at the top
+  explains conviction, risk appetite, position size, and allocation in one
+  place.
+- **Browse any intraday scan** — same idea, on the "⚡ Intraday scan" tab:
+  entry/stop/target levels, the mechanical read, and the Narrator's
+  explanation + pattern tag for each pick.
 - **Edit `UNIVERSE` / `TOP_N`** — written straight to `.env`. Gemini/Telegram
   credentials are intentionally **not** editable here — they're secrets,
   not day-to-day knobs, so they stay `.env`-only.
-- **Trigger a new run** — a button that runs the full pipeline in the
-  background and shows the live log.
+- **Trigger a run** — separate buttons for **▶ Run swing analysis** and
+  **⚡ Run intraday scan**, both showing the live log.
 
 ---
 
@@ -321,8 +418,31 @@ UNIVERSE=NIFTY50
 - Or a plain comma-separated list: `UNIVERSE=RELIANCE,TCS,INFY,HDFCBANK`.
 
 Bigger universes mean more sequential Yahoo Finance calls (not more AI
-calls — the AI cost stays ~2 calls regardless of universe size), so
-`NIFTY500` will take noticeably longer to fetch than `NIFTY50`.
+calls for the swing scan's scoring stage), so `NIFTY500` will take
+noticeably longer to fetch than `NIFTY50`. `UNIVERSE` is shared between
+`run.py` and `intraday_run.py`.
+
+---
+
+## 💰 Multiple risk profiles and the real ₹ split
+
+If your investor profile has more than one risk appetite selected (e.g.
+Conservative **and** Aggressive, via the dashboard's multi-select), the
+Decision Agent runs **once per tier** — you get a separate shortlist for
+each, so a `TOP_N` of 3 with 2 tiers selected means 2 AI calls, not 1.
+
+Within each tier's shortlist, `agents/decision_agent.py` also computes a
+real rupee split across your picks — plain Python, never an AI guess:
+higher-opportunity-score picks get a bigger share of your stated capital,
+every pick is capped at your max position-size %, and any leftover
+capital, once every pick has hit its cap, is redistributed to the
+next-highest-scoring pick. You'll see `allocated_amount` /
+`allocated_shares` per stock, and a `capital_summary` showing total
+deployed vs. cash remaining.
+
+**Conviction (HIGH/LOW)** is derived the same deterministic way, not
+self-reported by the AI: confidence ≥ 70 → HIGH, otherwise LOW — so it
+always means the same thing every time you see it.
 
 ---
 
@@ -360,24 +480,48 @@ prefer editing a file directly:
    ```
 
 Leave these blank and the shortlist just prints to the screen instead.
+Telegram rejects any single message over 4096 characters — a long
+multi-tier shortlist is automatically split into multiple numbered
+messages (`(1/2)`, `(2/2)`, ...) rather than failing silently.
 
 ---
 
-## ⏰ Running it automatically every morning
+## 🔭 Tracing every AI call (LangSmith, optional)
 
-**Mac/Linux**, via `cron` (8:00 AM every weekday):
+Set these in `.env` and every real Gemini call, plus every pipeline step,
+shows up as one visual trace tree at [smith.langchain.com](https://smith.langchain.com):
+
+```
+LANGSMITH_API_KEY=your-key
+LANGSMITH_PROJECT=ai-equity-analyst
+```
+
+Get a free key from LangSmith → Settings → API Keys. You'll see, per run:
+which agent ran in what order, the exact prompt and response for every AI
+call, real latency, and real token counts (so you can see actual cost per
+run). Leave `LANGSMITH_API_KEY` blank and tracing is a complete no-op —
+nothing about the app's behaviour changes, and the `langsmith` package
+doesn't even need to be importable.
+
+---
+
+## ⏰ Running it automatically
+
+**Mac/Linux**, via `cron` — swing scan at 8:00 AM every weekday, intraday
+scan every 30 minutes during market hours:
 ```bash
 crontab -e
 ```
 ```
 0 8 * * 1-5  cd /path/to/ai-equity-analyst && uv run python run.py >> output/cron.log 2>&1
+*/30 9-15 * * 1-5  cd /path/to/ai-equity-analyst && uv run python intraday_run.py >> output/intraday_cron.log 2>&1
 ```
 
-**Windows**: use Task Scheduler to run `run.py` on a daily trigger.
+**Windows**: use Task Scheduler with the same triggers.
 
 ---
 
-## 🧠 Two design principles worth knowing
+## 🧠 Design principles worth knowing
 
 **Why there's no fallback mode.** Earlier versions had a demo mode
 (fabricated numbers) and a rule-based fallback whenever Gemini was
@@ -387,14 +531,22 @@ reasoning defeats the point of an agentic analyst. Now: real data or a
 loud, clear error.
 
 **Why most agents don't call AI at all.** RSI, moving averages, beta,
-drawdown, volatility, "is this move unusual" — these all have exact
-mathematical definitions. Asking an LLM to compute them is slower, costs
-money, and is *less* consistent than a formula (an LLM can score the same
-numbers slightly differently between calls; a formula never does). AI is
-reserved for the two things no formula can do: understanding what a real
-headline means, and weighing four conflicting real signals into one
-explained verdict. See **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)** for the full
-reasoning and every formula used.
+drawdown, volatility, VWAP, opening-range breakouts, "is this move
+unusual" — these all have exact mathematical definitions. Asking an LLM to
+compute them is slower, costs money, and is *less* consistent than a
+formula. AI is reserved for what no formula can do: understanding what a
+real headline means, weighing conflicting real signals into one explained
+verdict, and (in the intraday pipeline) judging a genuinely ambiguous data
+anomaly or explaining a mechanical score in plain English.
+
+**Why AI explanations are kept write-only.** The intraday Narrator writes
+a plain-English reason for each pick's score — it is explicitly never
+allowed to change the score, rank, or conviction that the deterministic
+rules engine already set. Explaining a decision and making a decision are
+kept as two separate steps, so the AI can never quietly override a rule.
+
+See **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)** for the full reasoning and every
+formula used.
 
 ---
 
@@ -405,9 +557,15 @@ reasoning and every formula used.
 | `google-genai not installed` | Gemini library missing | `pip install google-genai` |
 | `Gemini is not configured` | credentials didn't load | recheck the `.env` auth setup above |
 | `[data] skipping X: insufficient data (...)` | one symbol's data was bad/stale/unreachable | normal — that symbol is excluded, the rest of the scan continues |
+| `[intraday] skipping X: ...` | no intraday bars for that symbol right now | normal outside market hours, or for a thinly-traded symbol |
+| `[quality] excluding X: ...` | the intraday quality gate caught stale/broken data or an unconfirmed corporate-action-sized gap | normal — that symbol is excluded from today's intraday scoring |
 | `chromadb` errors | vector DB missing | ignore — it auto-falls back to a JSON notebook |
 | PDF/DOCX/XLSX profile not read | parser lib missing | `pip install pypdf python-docx openpyxl beautifulsoup4` |
 | Telegram `chat not found` / `403 bot can't message the bot` | wrong `TELEGRAM_CHAT_ID` (often the bot's own id was used by mistake) | message your bot from your own account first, then re-fetch `getUpdates` |
+| Telegram `message is too long` | pre-2026 behaviour — now auto-split into multiple messages | update to the latest `alerts/telegram_alert.py` if you still see this |
+| `[observability] LANGSMITH_API_KEY is set but the langsmith package isn't installed` | tracing was turned on in `.env` before installing the library | `uv pip install langsmith` |
+| `RefreshError: Reauthentication is needed` | your Google Cloud ADC token expired (Vertex AI mode) | `gcloud auth application-default login` |
+| `403 API_KEY_SERVICE_BLOCKED` on a token-mode call | `GOOGLE_GENAI_USE_VERTEXAI=TRUE` is routing an API-key call through Vertex, which the key isn't provisioned for | set `GOOGLE_GENAI_USE_VERTEXAI=FALSE` for true AI Studio routing |
 
 ---
 
@@ -430,5 +588,7 @@ research and consult a SEBI-registered advisor before investing.
   fit" only sees today's watchlist.
 - Add a free earnings-calendar source for event-proximity risk.
 - Build an "agent performance" view in the dashboard on top of the memory
-  audit data already being collected — which signals actually predicted
-  outcomes over time.
+  audit data and the intraday backtest log already being collected — which
+  signals actually predicted outcomes over time.
+- Give the intraday scanner a live/looping mode instead of one-shot runs,
+  for continuous monitoring during market hours.
