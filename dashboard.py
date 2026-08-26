@@ -204,6 +204,43 @@ def portfolio_fit_badge(fit: str) -> str:
 # ----------------------------------------------------------------------
 # Sidebar — investor profile (upload and/or dropdown form)
 # ----------------------------------------------------------------------
+# NOTE: these widgets deliberately sit OUTSIDE an st.form. A form only
+# syncs its widgets' values to session_state (and to disk) when its submit
+# button is clicked — so a user who changes a field and clicks "Run"
+# without also clicking "Save" would silently run against the PREVIOUS
+# saved profile, with no warning. Plain widgets update live, so "Run" can
+# always save exactly what's currently shown before triggering the run.
+def _read_saved_profile() -> dict:
+    if PROFILE_JSON_PATH.exists():
+        try:
+            return json.loads(PROFILE_JSON_PATH.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _write_profile(profile: dict) -> None:
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    PROFILE_JSON_PATH.write_text(json.dumps(profile, indent=2))
+    write_env({"PROFILE_PATH": str(PROFILE_JSON_PATH)})
+
+
+def _profile_from_widget_state() -> dict:
+    """The profile dict for whatever is CURRENTLY selected in the sidebar
+    widgets right now — always live, never stale."""
+    capital = st.session_state.get("profile_capital_numeric", 0)
+    return {
+        "risk_appetites": st.session_state.get("profile_risk_appetites") or ["moderate"],
+        "capital_available": f"₹{capital:,.0f}",
+        "capital_numeric": capital or None,
+        "max_position_pct": st.session_state.get("profile_max_position_pct"),
+        "investment_horizon": st.session_state.get("profile_investment_horizon"),
+        "sector_preferences": st.session_state.get("profile_sector_preferences", []),
+        "sector_exclusions": st.session_state.get("profile_sector_exclusions", []),
+        "constraints": st.session_state.get("profile_constraints", ""),
+    }
+
+
 def render_profile_builder():
     st.sidebar.header("Investor Profile")
     uploaded = st.sidebar.file_uploader(
@@ -225,64 +262,64 @@ def render_profile_builder():
         except Exception as e:
             st.sidebar.warning(f"Could not parse {uploaded.name}: {e}")
 
+    # Defaults: a freshly uploaded doc wins (explicit new input this
+    # session); otherwise fall back to whatever's actually SAVED on disk —
+    # not a hardcoded guess — so the form reflects reality even after a
+    # page refresh, instead of silently resetting to "moderate".
+    base = doc_profile if doc_profile else _read_saved_profile()
+    base_risk = base.get("risk_appetites") or ([base["risk_appetite"]] if base.get("risk_appetite") else [])
+
     risk_options = ["conservative", "moderate", "aggressive"]
     horizon_options = ["short", "medium", "long"]
 
-    with st.sidebar.form("profile_form"):
-        doc_default_risk = doc_profile.get("risk_appetite")
-        risk_appetites = st.multiselect(
-            "Risk appetite (pick one or more)", risk_options,
-            default=[doc_default_risk] if doc_default_risk in risk_options else ["moderate"],
-            help="Conservative = safety first, smaller bets, avoids volatile names. "
-                 "Moderate = a balance of growth and safety. Aggressive = chases bigger "
-                 "moves, accepts more ups and downs. Pick more than one (e.g. Conservative "
-                 "+ Aggressive) to see a SEPARATE shortlist for each — useful for comparing "
-                 "how cautious vs. bold the same market looks today.",
-        )
-        capital_numeric = st.number_input(
-            "Capital available (₹)", min_value=0, step=10000,
-            value=int(doc_profile.get("capital_numeric") or 0),
-        )
-        investment_horizon = st.selectbox(
-            "Investment horizon", horizon_options,
-            index=horizon_options.index(doc_profile.get("investment_horizon")) if doc_profile.get("investment_horizon") in horizon_options else 2,
-        )
-        sector_preferences = st.multiselect(
-            "Preferred sectors (pick as many as you want)", SECTOR_OPTIONS,
-            default=[s for s in doc_profile.get("sector_preferences", []) if s in SECTOR_OPTIONS],
-        )
-        sector_exclusions = st.multiselect(
-            "Excluded sectors (pick as many as you want)", SECTOR_OPTIONS,
-            default=[s for s in doc_profile.get("sector_exclusions", []) if s in SECTOR_OPTIONS],
-        )
-        max_position_pct = st.number_input(
-            "Max position size per stock (%)", min_value=1, max_value=100,
-            value=int(doc_profile.get("max_position_pct") or 15),
-            help="The MOST of your capital you'll ever let ONE stock take, no matter "
-                 "how good the idea looks. Example: with ₹30,000 capital and a 15% "
-                 "limit, even your favourite pick is capped at ₹4,500 — so if that one "
-                 "stock goes badly wrong, it can't take down your whole portfolio. "
-                 "Lower % = safer, more spread out. Higher % = more concentrated bets.",
-        )
-        constraints = st.text_area(
-            "Other constraints / notes (optional)", value=doc_profile.get("constraints", ""),
-        )
+    st.sidebar.multiselect(
+        "Risk appetite (pick one or more)", risk_options,
+        default=[r for r in base_risk if r in risk_options] or ["moderate"],
+        key="profile_risk_appetites",
+        help="Conservative = safety first, smaller bets, avoids volatile names. "
+             "Moderate = a balance of growth and safety. Aggressive = chases bigger "
+             "moves, accepts more ups and downs. Pick more than one (e.g. Conservative "
+             "+ Aggressive) to see a SEPARATE shortlist for each — useful for comparing "
+             "how cautious vs. bold the same market looks today.",
+    )
+    st.sidebar.number_input(
+        "Capital available (₹)", min_value=0, step=10000,
+        value=int(base.get("capital_numeric") or 0),
+        key="profile_capital_numeric",
+    )
+    st.sidebar.selectbox(
+        "Investment horizon", horizon_options,
+        index=horizon_options.index(base.get("investment_horizon")) if base.get("investment_horizon") in horizon_options else 2,
+        key="profile_investment_horizon",
+    )
+    st.sidebar.multiselect(
+        "Preferred sectors (pick as many as you want)", SECTOR_OPTIONS,
+        default=[s for s in base.get("sector_preferences", []) if s in SECTOR_OPTIONS],
+        key="profile_sector_preferences",
+    )
+    st.sidebar.multiselect(
+        "Excluded sectors (pick as many as you want)", SECTOR_OPTIONS,
+        default=[s for s in base.get("sector_exclusions", []) if s in SECTOR_OPTIONS],
+        key="profile_sector_exclusions",
+    )
+    st.sidebar.number_input(
+        "Max position size per stock (%)", min_value=1, max_value=100,
+        value=int(base.get("max_position_pct") or 15),
+        key="profile_max_position_pct",
+        help="The MOST of your capital you'll ever let ONE stock take, no matter "
+             "how good the idea looks. Example: with ₹30,000 capital and a 15% "
+             "limit, even your favourite pick is capped at ₹4,500 — so if that one "
+             "stock goes badly wrong, it can't take down your whole portfolio. "
+             "Lower % = safer, more spread out. Higher % = more concentrated bets.",
+    )
+    st.sidebar.text_area(
+        "Other constraints / notes (optional)", value=base.get("constraints", ""),
+        key="profile_constraints",
+    )
 
-        if st.form_submit_button("Save profile", use_container_width=True):
-            merged = {
-                "risk_appetites": risk_appetites or ["moderate"],
-                "capital_available": doc_profile.get("capital_available") or f"₹{capital_numeric:,.0f}",
-                "capital_numeric": capital_numeric or None,
-                "max_position_pct": max_position_pct,
-                "investment_horizon": investment_horizon,
-                "sector_preferences": sector_preferences,
-                "sector_exclusions": sector_exclusions,
-                "constraints": constraints,
-            }
-            PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-            PROFILE_JSON_PATH.write_text(json.dumps(merged, indent=2))
-            write_env({"PROFILE_PATH": str(PROFILE_JSON_PATH)})
-            st.sidebar.success("Profile saved — used by the next run.")
+    if st.sidebar.button("Save profile", use_container_width=True):
+        _write_profile(_profile_from_widget_state())
+        st.sidebar.success("Profile saved — used by the next run.")
 
 
 # ----------------------------------------------------------------------
@@ -305,6 +342,10 @@ def render_run_controls():
     st.sidebar.divider()
     st.sidebar.header("Run")
     if st.sidebar.button("▶ Run swing analysis now", use_container_width=True):
+        # Always save whatever the profile widgets currently show, right
+        # before running — so this run can NEVER silently use a stale
+        # profile just because "Save profile" wasn't clicked separately.
+        _write_profile(_profile_from_widget_state())
         with st.spinner("Running the full agent pipeline..."):
             proc = subprocess.run(
                 ["uv", "run", "python", "run.py"],
@@ -339,6 +380,26 @@ def render_run_controls():
             st.rerun()
         else:
             st.sidebar.error("Intraday scan failed — see log above.")
+
+    st.sidebar.divider()
+    st.sidebar.header("Price Tracker")
+    st.sidebar.caption(
+        "Adds today's real price to every past sheet in "
+        "output/portfolio_tracker.xlsx, 0 AI calls. Run this whenever you "
+        "want to check how past picks have performed."
+    )
+    if st.sidebar.button("📒 Update price tracker", use_container_width=True):
+        with st.spinner("Fetching real prices for every past pick..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "tracker/price_tracker.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("Tracker run log", expanded=proc.returncode != 0):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+        if proc.returncode == 0:
+            st.sidebar.success("Price tracker updated.")
+        else:
+            st.sidebar.error("Price tracker failed — see log above.")
 
 
 # ----------------------------------------------------------------------

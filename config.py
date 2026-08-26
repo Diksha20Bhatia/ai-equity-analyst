@@ -46,6 +46,13 @@ class Settings:
         self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
         self.profile_path = os.getenv("PROFILE_PATH", "").strip()
 
+        # Optional: push each run's shortlist into your real TradingView
+        # watchlist (local-only, no credentials — see alerts/tradingview_watchlist.py).
+        self.tradingview_watchlist_enabled = _get_bool("TRADINGVIEW_WATCHLIST_ENABLED", False)
+        self.tradingview_cli_path = os.path.expanduser(
+            os.getenv("TRADINGVIEW_CLI_PATH", "~/mcp-servers/tradingview-mcp/src/cli/index.js")
+        )
+
     # A key is "placeholder" if it still looks like the sample text.
     def _api_key_looks_real(self) -> bool:
         return bool(self.api_key) and "replace-with" not in self.api_key

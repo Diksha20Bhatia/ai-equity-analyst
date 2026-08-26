@@ -19,7 +19,15 @@ It walks through the whole morning routine, in order:
   7. Decision Agent makes ONE batched AI call PER selected risk-appetite
      tier (a plain "moderate" investor gets 1 call; someone who selected
      conservative + aggressive gets 2, one shortlist per tier).
-  8. Store today's scores into memory and send a Telegram alert.
+  8. Store today's scores into memory, send a Telegram alert, (if
+     TRADINGVIEW_WATCHLIST_ENABLED=true) push today's shortlisted symbols
+     into your real TradingView watchlist, and write today's results as a
+     new dated sheet in output/portfolio_tracker.xlsx — see
+     alerts/tradingview_watchlist.py and alerts/excel_report.py.
+
+To see how past picks have actually performed since they were listed,
+run tracker/price_tracker.py separately — a standalone tool that appends
+a new dated price column to every past sheet in that workbook.
 
 2 AI calls happen per run for a single risk tier, no matter how big the
 universe is — see README.md for why. Selecting more than one risk-appetite
@@ -41,7 +49,7 @@ from data import market_data, market_context
 from data.nse_universe import resolve_universe
 from memory.memory_layer import MemoryLayer
 from profile.profile_loader import load_profile
-from alerts import telegram_alert
+from alerts import telegram_alert, tradingview_watchlist, excel_report
 
 from agents.research_agent import ResearchAgent
 from agents.fundamental_agent import FundamentalAgent
@@ -178,6 +186,8 @@ def main():
     alert = format_alert(results_by_tier)
     banner("STEP 6 — Final output")
     telegram_alert.send(alert)
+    tradingview_watchlist.add_symbols(list(actions_by_symbol.keys()))
+    excel_report.write_run(results_by_tier, analyses)
 
     # Save a copy to disk for your records (drop the raw price series first —
     # it's a pandas Series, not JSON-serialisable, and the dashboard/agents
