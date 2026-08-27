@@ -84,6 +84,7 @@ flowchart TB
         NSEArc[("NSE archives<br/>Nifty 50 / 500 lists<br/>— free, keyless")]
         TG[("Telegram Bot API<br/>— needs a bot token")]
         LS[("LangSmith<br/>— optional, free tier")]
+        TV[("TradingView Desktop<br/>— optional, local only, no keys")]
     end
 
     subgraph SwingApp["Swing pipeline"]
@@ -109,10 +110,13 @@ flowchart TB
         Profile["profile/profile_loader.py"]
         Dashboard["dashboard.py — Streamlit UI"]
         Alert["alerts/telegram_alert.py"]
-        Output[("output/*.json")]
+        TVAlert["alerts/tradingview_watchlist.py<br/>— optional"]
+        Excel["alerts/excel_report.py"]
+        Tracker["tracker/price_tracker.py<br/>— separate, standalone tool"]
+        Output[("output/*.json + portfolio_tracker.xlsx")]
     end
 
-    Yahoo --> MarketData & MktCtx & IntraData
+    Yahoo --> MarketData & MktCtx & IntraData & Tracker
     GNews --> MarketData
     NSEArc --> Universe
     Gemini --> Config
@@ -128,18 +132,26 @@ flowchart TB
     Memory --> Run
     Profile --> Run
     Run --> Alert --> TG
+    Run --> TVAlert --> TV
+    Run --> Excel --> Output
     IntraRun --> Alert
     Run --> Output --> Dashboard
     IntraRun --> Output
+    Tracker -.->|reads real prices, appends columns| Output
     Gemini -.->|traced if enabled| LS
-    Dashboard -. "▶ Run swing / ⚡ Run intraday" .-> Run & IntraRun
+    Dashboard -. "▶ Run swing / ⚡ Run intraday / 📒 Update tracker" .-> Run & IntraRun & Tracker
     Dashboard -. "upload / fill profile form" .-> Profile
 ```
 
-**No MCP servers are used anywhere in this app.** Every connection above is a
-plain, direct HTTP call or SDK call — `requests` for Google News/NSE/Telegram,
-the `yfinance` library for Yahoo Finance, the `google-genai` SDK for Gemini,
-and the `langsmith` SDK (optional) for tracing.
+**Every connection above is either a plain, direct HTTP/SDK call, or a local,
+credential-free connection to an app already running on your own machine.**
+`requests` handles Google News/NSE/Telegram, `yfinance` handles Yahoo Finance,
+`google-genai` handles Gemini, and `langsmith` (optional) handles tracing —
+none of those are MCP. The one exception is the optional TradingView
+watchlist push: it shells out to the [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp)
+CLI, which drives your already-logged-in TradingView Desktop app over Chrome
+DevTools Protocol on `localhost` — no TradingView credentials are ever
+stored or sent anywhere by this app.
 
 ---
 
@@ -157,6 +169,8 @@ sequenceDiagram
     participant Mem as Memory
     participant DA as Decision Agent (1 AI call<br/>per risk tier)
     participant TG as Telegram
+    participant TV as TradingView (optional)
+    participant XL as portfolio_tracker.xlsx
 
     You->>Run: python run.py
     Run->>Ctx: fetch real Nifty 50 — once
@@ -173,6 +187,8 @@ sequenceDiagram
     DA-->>Run: shortlist per tier — opportunity score, confidence,<br/>bull/bear case, target, ₹ split
     Run->>Mem: store today's real scores for next time
     Run->>TG: send the shortlist (or print it, if not configured)
+    Run->>TV: push shortlisted symbols to your watchlist (if enabled)
+    Run->>XL: write today's dated sheet (selected + top-10 watchlist)
     Run->>You: save output/analysis_DATE.json
 ```
 
@@ -250,8 +266,18 @@ ai-equity-analyst/
 │
 ├── memory/memory_layer.py         ← The Notebook — real price/score deltas since your last call
 ├── profile/profile_loader.py      ← reads your profile file (PDF/XLSX/HTML/DOCX/TXT/JSON)
-├── alerts/telegram_alert.py       ← sends the shortlist to Telegram (or prints it); splits long alerts
-└── output/                        ← each run's full analysis, saved as JSON
+│
+├── alerts/
+│   ├── telegram_alert.py          ← sends the shortlist to Telegram (or prints it); splits long alerts
+│   ├── tradingview_watchlist.py   ← optional: pushes shortlisted symbols to your real TradingView watchlist
+│   └── excel_report.py            ← writes each run into output/portfolio_tracker.xlsx, one sheet per date
+│
+├── tracker/
+│   └── price_tracker.py           ← standalone tool, separate from agents/ — appends a real dated price
+│                                     column to every past sheet in portfolio_tracker.xlsx, 0 AI calls
+│
+├── .mcp.json                      ← registers the local tradingview-mcp server for this project
+└── output/                        ← each run's full analysis (JSON) + portfolio_tracker.xlsx
 ```
 
 For exactly what each file does internally — every function, every real
@@ -270,6 +296,7 @@ formula, every API endpoint — see **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
 | **Telegram Bot API** | Delivers the finished shortlist to your phone | `alerts/telegram_alert.py` | ✅ yes (optional) |
 | **ChromaDB** (local) | Stores real price/score history per stock for the audit/delta system | `memory/memory_layer.py` | ❌ local, no key |
 | **LangSmith** | Optional: traces every AI call and pipeline step for auditing/debugging | `observability.py` | ✅ yes (optional, free tier) |
+| **TradingView Desktop** | Optional: real watchlist push — no API, no key; drives your already-logged-in Desktop app locally over Chrome DevTools Protocol | `alerts/tradingview_watchlist.py` | ❌ local only, zero credentials |
 | **your file or the dashboard form** | Your investor profile | `profile/profile_loader.py` | ❌ local |
 
 Everything else — RSI, moving averages, beta, drawdown, volatility, ATR,
@@ -404,6 +431,9 @@ Opens at `http://localhost:8501`. From there you can:
   not day-to-day knobs, so they stay `.env`-only.
 - **Trigger a run** — separate buttons for **▶ Run swing analysis** and
   **⚡ Run intraday scan**, both showing the live log.
+- **Update the price tracker** — **📒 Update price tracker** runs
+  `tracker/price_tracker.py` for you, appending a real dated price column
+  to every past sheet in `output/portfolio_tracker.xlsx`.
 
 ---
 
@@ -483,6 +513,72 @@ Leave these blank and the shortlist just prints to the screen instead.
 Telegram rejects any single message over 4096 characters — a long
 multi-tier shortlist is automatically split into multiple numbered
 messages (`(1/2)`, `(2/2)`, ...) rather than failing silently.
+
+---
+
+## 📈 Pushing picks to a real TradingView watchlist (optional)
+
+Every run can also add today's shortlisted symbols to your actual
+TradingView watchlist — no investment capability, just a list. This is
+**local-only and credential-free**: it drives your already-logged-in
+TradingView Desktop app on your own machine over Chrome DevTools Protocol
+via the [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp)
+CLI, which is why it's the *only* place in this app that touches something
+resembling MCP.
+
+**Setup, one time:**
+1. `git clone https://github.com/tradesdontlie/tradingview-mcp ~/mcp-servers/tradingview-mcp && cd ~/mcp-servers/tradingview-mcp && npm install`
+2. Have TradingView Desktop installed (e.g. `brew install --cask tradingview` on Mac) and logged in.
+3. In `.env`:
+   ```
+   TRADINGVIEW_WATCHLIST_ENABLED=true
+   TRADINGVIEW_CLI_PATH=~/mcp-servers/tradingview-mcp/src/cli/index.js
+   ```
+
+**Before each run**, launch TradingView with its debug port enabled instead
+of the normal icon:
+```bash
+~/mcp-servers/tradingview-mcp/scripts/launch_tv_debug_mac.sh
+```
+
+This is a **live local connection, not a background service** — if
+TradingView Desktop isn't open with that debug port when `run.py` executes,
+`alerts/tradingview_watchlist.py` just logs `[tradingview] skipped: ...`
+and the rest of the run continues completely normally. Leave
+`TRADINGVIEW_WATCHLIST_ENABLED` unset (the default) to skip this entirely.
+
+---
+
+## 📒 Tracking your picks over time (Excel)
+
+Every swing run also writes to a persistent workbook,
+`output/portfolio_tracker.xlsx` — created on the first run, one new sheet
+per run **date** after that (a same-day re-run replaces that day's sheet
+rather than duplicating it; every other date's sheet is untouched). Each
+sheet has two tables:
+
+1. **Selected Stocks** — the deduped final shortlist across every risk
+   tier you ran, with a Tier(s) column showing which tier(s) picked it.
+2. **Top N Watchlist** — every stock the Scout flagged as unusual that day,
+   whether or not it made the final cut.
+
+This is plain code, zero AI, and always on — no toggle needed.
+
+**To see how those past picks have actually performed**, run the
+tracker separately (`tracker/price_tracker.py` — deliberately its own
+folder, apart from `agents/`, since it isn't part of the daily pipeline):
+
+```bash
+uv run python tracker/price_tracker.py     # or the dashboard's 📒 button
+```
+
+It walks *every* sheet in the workbook and appends one new column, dated
+today, to every table it finds: each stock's real current price, plus its
+% change vs. whichever column was the most recent price checkpoint for
+that stock — the original listing price the first time you run the
+tracker, or the last tracking column a previous run added, every time
+after that. Run it as often as you like; each distinct symbol's price is
+only fetched once per run, no matter how many sheets it appears in.
 
 ---
 
@@ -566,6 +662,9 @@ formula used.
 | `[observability] LANGSMITH_API_KEY is set but the langsmith package isn't installed` | tracing was turned on in `.env` before installing the library | `uv pip install langsmith` |
 | `RefreshError: Reauthentication is needed` | your Google Cloud ADC token expired (Vertex AI mode) | `gcloud auth application-default login` |
 | `403 API_KEY_SERVICE_BLOCKED` on a token-mode call | `GOOGLE_GENAI_USE_VERTEXAI=TRUE` is routing an API-key call through Vertex, which the key isn't provisioned for | set `GOOGLE_GENAI_USE_VERTEXAI=FALSE` for true AI Studio routing |
+| `[tradingview] skipped: timed out` | TradingView Desktop isn't running with the debug port enabled | launch it via `launch_tv_debug_mac.sh` before running |
+| `[tradingview] skipped: 'node' not found, or tradingview-mcp isn't cloned` | `TRADINGVIEW_CLI_PATH` is wrong, or the repo/Node.js isn't installed | recheck the setup steps above |
+| `RuntimeError: No workbook found` from `price_tracker.py` | you haven't run `run.py` yet this session | run the swing scan at least once first — there's nothing to track yet |
 
 ---
 
@@ -588,7 +687,9 @@ research and consult a SEBI-registered advisor before investing.
   fit" only sees today's watchlist.
 - Add a free earnings-calendar source for event-proximity risk.
 - Build an "agent performance" view in the dashboard on top of the memory
-  audit data and the intraday backtest log already being collected — which
-  signals actually predicted outcomes over time.
+  audit data, the intraday backtest log, and `portfolio_tracker.xlsx`
+  already being collected — which signals actually predicted outcomes over
+  time. The raw data now exists (the Excel tracker); a proper in-dashboard
+  chart on top of it doesn't yet.
 - Give the intraday scanner a live/looping mode instead of one-shot runs,
   for continuous monitoring during market hours.

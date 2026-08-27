@@ -170,8 +170,8 @@ Gemini is given, for Reliance and every other shortlisted stock together: all th
 
 Two things Gemini is deliberately **not** asked to decide: how many shares to buy, and how to split your money across your different picks. Both are worked out afterward by plain code, from your own real stated budget — never guessed by the AI.
 
-**Step 9 — Send it to you.** Files: `run.py` + `alerts/telegram_alert.py`.
-The finished shortlist — including Reliance, if it made the cut — is sent to your Telegram and saved to a file, and today's real scores are stored so tomorrow's run can compare against them in Step 7.
+**Step 9 — Send it to you.** Files: `run.py` + `alerts/telegram_alert.py` (+ two optional outputs).
+The finished shortlist — including Reliance, if it made the cut — is sent to your Telegram and saved to a file, and today's real scores are stored so tomorrow's run can compare against them in Step 7. Two more things happen here: a running Excel workbook always gets updated (see §7 below), and — only if you've turned it on — the picks get pushed to a real TradingView watchlist.
 
 ---
 
@@ -203,6 +203,7 @@ flowchart TB
         Gemini[("Google Gemini — AI")]
         Telegram[("Telegram Bot API")]
         LS[("LangSmith — optional")]
+        TV[("TradingView Desktop<br/>optional, local only")]
     end
 
     subgraph Swing["SWING PIPELINE  ·  run.py  ·  once a day"]
@@ -212,7 +213,8 @@ flowchart TB
         S3["3. Analyst + Chart Reader + Skeptic<br/>score the watchlist"]
         S4["4. News Reader — AI call"]
         S5["5. Decision Manager — AI call<br/>final shortlist + ₹ split"]
-        S1 --> S2 --> S3 --> S4 --> S5
+        S6["6. Write Excel sheet +<br/>push to TradingView (optional)"]
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6
     end
 
     subgraph Intraday["INTRADAY PIPELINE  ·  intraday_run.py  ·  market hours only"]
@@ -233,8 +235,10 @@ flowchart TB
     Gemini --> I5
     Swing --> Telegram
     Intraday --> Telegram
+    S6 --> TV
     Swing --> Dash[("Web dashboard")]
     Intraday --> Dash
+    Tracker["Price Tracker<br/>separate, standalone tool"] -.->|updates past sheets<br/>with real prices| S6
     Gemini -.->|every AI call optionally logged| LS
 ```
 
@@ -246,16 +250,29 @@ flowchart TB
 |---|---|
 | `agents/` | All 10 specialist agents, one file each |
 | `data/` | Everything that fetches or calculates real numbers — prices, news, index lists, and all the maths formulas (RSI, volatility, beta, etc.) |
-| `alerts/` | Sends the finished shortlist to Telegram |
+| `alerts/` | Sends the finished shortlist to Telegram, writes the Excel workbook, and (optional) pushes to TradingView |
+| `tracker/` | A separate, standalone tool for checking how past picks have performed — not part of the daily pipeline |
 | `memory/` | Remembers each stock's last real score/price so we can say "this changed since last time" |
 | `profile/` | Reads your investor profile (risk appetite, capital, sector preferences) from a document or the dashboard form |
 | `run.py` / `intraday_run.py` / `intraday_backtest.py` | The three things you actually run |
 | `dashboard.py` | The web UI (built with Streamlit) |
-| `observability.py` | Optional tracing hookup (see §8) |
+| `observability.py` | Optional tracing hookup (see §9) |
 
 ---
 
-## 7. Where the data comes from, and what needs a paid key
+## 7. Tracking outcomes over time (Excel + TradingView)
+
+A shortlist is only useful if you can later check whether it was any good. Two features exist purely for that:
+
+**A running Excel workbook, always on.** Every swing run writes into `output/portfolio_tracker.xlsx` — one sheet per date, holding that day's selected picks and the full top-10 watchlist, each with a real price. Nothing needs to be turned on; this just happens.
+
+**A separate "price tracker" tool, run whenever you want.** This is deliberately kept apart from the daily pipeline, in its own `tracker/` folder — it's a maintenance pass, not a step in the automated run. When you run it (or click the dashboard's button), it walks every sheet ever written and adds one new column, dated today: each stock's real current price, and its % change since the last time you checked. Run it after a week, a month, whenever — it always compares against your *last* check, not just the original pick date, so you can see momentum between check-ins, not just total return.
+
+**Optional: push straight to a real TradingView watchlist.** If you turn this on, every run also adds the day's picks to your actual TradingView watchlist — no investment capability, purely a list. This works entirely locally: it drives your own already-logged-in TradingView Desktop app on your machine, with **no credentials of any kind stored or transmitted**. It's off by default and never blocks a run if TradingView isn't open.
+
+---
+
+## 8. Where the data comes from, and what needs a paid key
 
 | Source | What it gives us | Cost |
 |---|---|---|
@@ -265,12 +282,13 @@ flowchart TB
 | **NSE India (official archives)** | The exact list of which companies are in the Nifty 50 / Nifty 500 today | Free, no key |
 | **Telegram** | Delivers the finished shortlist as a phone notification | Free, needs a one-time bot setup (optional) |
 | **LangSmith** | Optional: lets us see every AI call and every step of a run in a visual trace, for debugging/monitoring | Free tier available (optional) |
+| **TradingView Desktop** | Optional: real watchlist push, local-only, zero credentials | Free (needs your own TradingView account) |
 
-**In short: only one thing costs money — the AI calls to Gemini — and everything else feeding into the analysis is free, public data.** ChromaDB (our "memory") also runs entirely locally, no cost, no external service.
+**In short: only one thing costs money — the AI calls to Gemini — and everything else feeding into the analysis is free, public data, or runs entirely on your own machine.** ChromaDB (our "memory") and the Excel workbook also run entirely locally, no cost, no external service.
 
 ---
 
-## 8. Can we see what the AI is actually doing? (Observability)
+## 9. Can we see what the AI is actually doing? (Observability)
 
 Yes. We added an optional integration with **LangSmith**, an AI-monitoring tool. When it's switched on:
 - Every run shows up as one visual timeline: which agent ran, in what order, what it decided.
@@ -281,7 +299,7 @@ This gives us the ability to audit, cost-track, and debug every AI decision afte
 
 ---
 
-## 9. Guardrails — how we keep this trustworthy
+## 10. Guardrails — how we keep this trustworthy
 
 - **No fake data, ever.** If a real data source is unreachable, the app stops and shows the real error — it never quietly substitutes a made-up number to keep going.
 - **No silent fallbacks.** Early versions had a "demo mode" and a rule-based backup plan for when the AI was unreachable. Both were removed — either the analysis is real, or you're told clearly that it failed.
@@ -290,7 +308,7 @@ This gives us the ability to audit, cost-track, and debug every AI decision afte
 
 ---
 
-## 10. Quick glossary
+## 11. Quick glossary
 
 - **LLM / AI call** — one request sent to Google's Gemini model, the only step in this system that costs money and "thinks" rather than calculates.
 - **Batched call** — one AI request that covers *every* stock on the watchlist at once, instead of one request per stock.

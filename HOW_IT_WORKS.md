@@ -34,6 +34,7 @@ flowchart TB
         NSEArc[("NSE archives")]
         TG[("Telegram")]
         LS[("LangSmith — optional")]
+        TV[("TradingView Desktop — optional,<br/>local only, no keys")]
     end
     subgraph SwingApp["Swing pipeline (run.py)"]
         MarketData["data/market_data.py"]
@@ -41,6 +42,8 @@ flowchart TB
         MktCtx["data/market_context.py"]
         ZeroAI["4 zero-AI agents"]
         EventDecision["News/Event Reader +<br/>Decision Agent"]
+        Excel["alerts/excel_report.py"]
+        TVAlert["alerts/tradingview_watchlist.py"]
     end
     subgraph IntraApp["Intraday pipeline (intraday_run.py)"]
         IntraData["data/intraday_data.py"]
@@ -49,9 +52,10 @@ flowchart TB
         Sentinel["Data Sentinel<br/>(AI, only if needed)"]
         Narrator["Narrator<br/>(AI, top picks only)"]
     end
+    Tracker["tracker/price_tracker.py<br/>standalone, separate folder"]
     Dashboard["dashboard.py"]
 
-    Yahoo --> MarketData & MktCtx & IntraData
+    Yahoo --> MarketData & MktCtx & IntraData & Tracker
     GNews --> MarketData
     NSEArc --> MarketData
     MarketData --> Signals --> ZeroAI
@@ -59,6 +63,10 @@ flowchart TB
     ZeroAI --> EventDecision
     IntraAgent --> Narrator
     Gemini --> EventDecision & Sentinel & Narrator
+    EventDecision --> Excel & TVAlert
+    TVAlert --> TV
+    Excel --> Dashboard
+    Tracker -.->|appends dated price columns| Excel
     EventDecision & Narrator --> Dashboard
     Gemini -.->|every call traceable| LS
 ```
@@ -85,6 +93,18 @@ flowchart TB
   you can inspect after the fact — the exact prompt, the exact response,
   how long it took, how many tokens it used. Entirely opt-in; the app
   behaves identically whether it's on or off.
+- **TradingView Desktop** — optional. If enabled, `alerts/tradingview_watchlist.py`
+  pushes today's shortlisted symbols to your real TradingView watchlist by
+  driving your already-logged-in Desktop app locally over Chrome DevTools
+  Protocol (a debugging interface, not a public API) — no TradingView
+  credentials are ever stored or sent anywhere.
+- **`alerts/excel_report.py`** — writes each run into a persistent workbook,
+  `output/portfolio_tracker.xlsx`: one new sheet per run date, with the
+  selected shortlist and the full top-10 watchlist as two tables.
+- **`tracker/price_tracker.py`** — a standalone tool, deliberately kept
+  separate from `agents/` since it isn't part of the daily pipeline. Run
+  it whenever you like to append a real, dated price column to every past
+  sheet in that workbook.
 - **`data/market_data.py`** — calls Yahoo Finance and Google News for the
   swing pipeline and turns the raw response into a clean Python dictionary
   ("bundle") per stock, using a **year** of daily price history.
@@ -145,6 +165,14 @@ conflicting real signals into one coherent recommendation, judging whether
 an unusual price gap is a real corporate action or bad data (with no
 corporate-actions calendar to confirm it either way), and explaining a
 mechanical score in plain, trader-readable language.
+
+**Not everything zero-AI is an "agent."** `alerts/excel_report.py`,
+`alerts/tradingview_watchlist.py`, and `tracker/price_tracker.py` are also
+zero-AI and real-data-only, but they're plain output/reporting utilities,
+not part of the `agents/` scoring framework — they don't inherit from
+`BaseAgent` and don't have a `system_instruction`. They're listed
+throughout this document anyway since "which files touch real vs. AI-
+derived data" matters just as much as "which agents call Gemini."
 
 ---
 
@@ -270,7 +298,18 @@ plain Python:
 The finished shortlist(s) are saved to `output/analysis_DATE.json`, sent
 to your Telegram (split into multiple messages if the combined text is
 over Telegram's 4096-character limit), and today's real scores are stored
-in Memory for tomorrow's delta comparison.
+in Memory for tomorrow's delta comparison. Two more things happen here,
+both optional/always-on in different ways:
+- **`alerts/excel_report.py`** (always on, zero AI) writes today's
+  deduped shortlist and the full top-10 watchlist into a new dated sheet
+  in `output/portfolio_tracker.xlsx` — creating the workbook on the first
+  run, replacing that day's sheet on a same-day re-run, leaving every
+  other date's sheet untouched.
+- **`alerts/tradingview_watchlist.py`** (only if you've set
+  `TRADINGVIEW_WATCHLIST_ENABLED=true`) pushes the same shortlisted
+  symbols to your real TradingView watchlist. This is a local-only
+  connection to your own already-running Desktop app — if it isn't open,
+  this step just logs a skip message and everything else still completes.
 
 ---
 
@@ -364,6 +403,51 @@ language, just facts.
 
 ---
 
+## Part 3C — The standalone price tracker (`tracker/price_tracker.py`)
+
+This one isn't part of either pipeline — it's a maintenance tool you run
+whenever you want to check how *past* swing picks have actually performed.
+Zero AI: it's a real price lookup and a subtraction, nothing more.
+
+### Step 1 — Find every table in every sheet
+It opens `output/portfolio_tracker.xlsx` and scans every sheet (every past
+run date) for tables — recognised by a header row whose first cell is
+literally `"Symbol"`. Both tables `excel_report.py` writes (Selected
+Stocks, Top N Watchlist) match this, so both get tracked.
+
+### Step 2 — Work out what to compare against
+For each table, it looks at the *rightmost* column in that table's header
+that's a genuine price checkpoint — either the original `"Current Price"`
+column (the very first time you run the tracker against that sheet), or
+the most recent date-named column a *previous* run of the tracker added
+(every time after that). It deliberately skips over non-price columns
+like `"Tier(s)"` or `"Description"` when looking.
+
+### Step 3 — Fetch real current prices, once per symbol
+For every distinct symbol across every sheet, it fetches one real current
+price via Yahoo Finance and caches it — so a stock you picked on five
+different days only costs one real network call this run, not five.
+
+### Step 4 — Append the new column
+For each table, it adds one new column, headered with today's date, and
+writes each stock's real current price plus its % change vs. the
+checkpoint found in Step 2 — e.g. `₹1,325.50 (+2.3%)`. If you run the
+tracker twice on the same day, it overwrites that day's column in place
+rather than adding a duplicate one.
+
+### A worked example
+Say a sheet from 3 weeks ago has `HCLTECH` in its Selected Stocks table,
+listed then at ₹1,300.00. You've run the tracker twice since: once a week
+later (added a `+1w-date` column showing `₹1,285.00 (-1.2%)`), and once
+just now. The new column added just now compares against *that* most
+recent tracked value, not the original ₹1,300.00 — so if HCLTECH is at
+₹1,310.00 today, the new cell reads `₹1,310.00 (+1.9%)` (vs. the ₹1,285.00
+checkpoint), even though it's actually only +0.8% above the *original*
+listing price. This is deliberate: each column answers "how has it moved
+since I last checked," not "how has it moved since day one."
+
+---
+
 ## Part 4 — Every real formula used, in plain English
 
 ### Swing pipeline — `data/signals.py` (zero AI, zero network calls)
@@ -417,6 +501,8 @@ language, just facts.
 | Sending the alert | Telegram Bot API (`api.telegram.org/bot<token>/sendMessage`) | `alerts/telegram_alert.py` | Yes, optional |
 | Storing memory | ChromaDB, a small local vector database (no internet involved) | `memory/memory_layer.py` | No |
 | Tracing AI calls | LangSmith, via the official `langsmith` Python SDK's `@traceable` decorator | `observability.py`, applied across `agents/*.py`, `run.py`, `intraday_run.py`, `intraday_backtest.py` | Yes, optional |
+| Pushing to TradingView | [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp) CLI, driving your logged-in TradingView Desktop app over Chrome DevTools Protocol on `localhost` — not a public API, no credentials | `alerts/tradingview_watchlist.py` | No (local only) |
+| Writing the workbook | `openpyxl`, a local Python library — no network call at all | `alerts/excel_report.py`, `tracker/price_tracker.py` | No |
 
 ---
 
