@@ -53,6 +53,31 @@ class Settings:
             os.getenv("TRADINGVIEW_CLI_PATH", "~/mcp-servers/tradingview-mcp/src/cli/index.js")
         )
 
+        # Optional: send each run's real shortlist to a Bodhi workflow (e.g.
+        # a Risk Insights Generator) for an extra AI-driven risk analysis on
+        # top of your own — see integrations/bodhi_risk_insights.py.
+        self.bodhi_enabled = _get_bool("BODHI_ENABLED", False)
+        self.bodhi_base_url = os.getenv("BODHI_BASE_URL", "").strip().rstrip("/")
+        self.bodhi_pat_token = os.getenv("BODHI_PAT_TOKEN", "").strip()
+        self.bodhi_task_id = os.getenv("BODHI_TASK_ID", "").strip()
+        self.bodhi_workflow_id = os.getenv("BODHI_WORKFLOW_ID", "").strip()
+        # Your Bodhi workflow's entry-point variable names (Start Node /
+        # Workflow Variables — referenced in node prompts as {{$var[Name]}}).
+        # Defaults match a confirmed-working workflow; Bodhi variable names
+        # can't contain spaces, hence the run-together/underscore casing.
+        self.bodhi_portfolio_variable = os.getenv("BODHI_PORTFOLIO_VARIABLE", "Investmentportfolio").strip()
+        self.bodhi_query_variable = os.getenv("BODHI_QUERY_VARIABLE", "Query_for_risk_assessment").strip()
+        self.bodhi_poll_interval = float(os.getenv("BODHI_POLL_INTERVAL", "5"))
+        self.bodhi_timeout = float(os.getenv("BODHI_TIMEOUT", "300"))
+        self.bodhi_trace_prefix = os.getenv("BODHI_TRACE_PREFIX", "ai-equity-analyst").strip()
+        self.bodhi_risk_query = os.getenv(
+            "BODHI_RISK_QUERY",
+            "Assess this portfolio's exposure to current geopolitical conflicts, crude "
+            "oil prices, US inflation and Fed policy, US-India tariffs, USD/INR moves, "
+            "FII/DII flows, RBI policy, and global recession risk. Flag sector "
+            "concentration and give a contrarian view where relevant.",
+        ).strip()
+
     # A key is "placeholder" if it still looks like the sample text.
     def _api_key_looks_real(self) -> bool:
         return bool(self.api_key) and "replace-with" not in self.api_key

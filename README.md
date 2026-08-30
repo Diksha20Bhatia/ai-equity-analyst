@@ -113,6 +113,7 @@ flowchart TB
         TVAlert["alerts/tradingview_watchlist.py<br/>— optional"]
         Excel["alerts/excel_report.py"]
         Tracker["tracker/price_tracker.py<br/>— separate, standalone tool"]
+        Bodhi["integrations/bodhi_risk_insights.py<br/>— optional, external"]
         Output[("output/*.json + portfolio_tracker.xlsx")]
     end
 
@@ -131,6 +132,9 @@ flowchart TB
     Narrator --> IntraRun
     Memory --> Run
     Profile --> Run
+    Run --> Bodhi -.->|real shortlist, real answer, if enabled| BodhiSvc((Bodhi))
+    Bodhi -->|verdicts gate which symbols go| TVAlert
+    Bodhi -->|per-symbol verdict shown inline| Alert
     Run --> Alert --> TG
     Run --> TVAlert --> TV
     Run --> Excel --> Output
@@ -139,7 +143,7 @@ flowchart TB
     IntraRun --> Output
     Tracker -.->|reads real prices, appends columns| Output
     Gemini -.->|traced if enabled| LS
-    Dashboard -. "▶ Run swing / ⚡ Run intraday / 📒 Update tracker" .-> Run & IntraRun & Tracker
+    Dashboard -. "▶ Run swing / ⚡ Run intraday / 📒 Update tracker / 🧠 Bodhi Risk Insight" .-> Run & IntraRun & Tracker & Bodhi
     Dashboard -. "upload / fill profile form" .-> Profile
 ```
 
@@ -151,7 +155,9 @@ none of those are MCP. The one exception is the optional TradingView
 watchlist push: it shells out to the [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp)
 CLI, which drives your already-logged-in TradingView Desktop app over Chrome
 DevTools Protocol on `localhost` — no TradingView credentials are ever
-stored or sent anywhere by this app.
+stored or sent anywhere by this app. The optional Bodhi Risk Insight is a
+plain `requests` REST call to a Bodhi workflow (a separate, external AI
+platform) — see below.
 
 ---
 
@@ -168,6 +174,7 @@ sequenceDiagram
     participant Event as News/Event Reader (1 AI call)
     participant Mem as Memory
     participant DA as Decision Agent (1 AI call<br/>per risk tier)
+    participant Bodhi as Bodhi (optional)
     participant TG as Telegram
     participant TV as TradingView (optional)
     participant XL as portfolio_tracker.xlsx
@@ -186,8 +193,10 @@ sequenceDiagram
     Run->>DA: everything above + real market context + your profile,<br/>once per selected risk tier
     DA-->>Run: shortlist per tier — opportunity score, confidence,<br/>bull/bear case, target, ₹ split
     Run->>Mem: store today's real scores for next time
-    Run->>TG: send the shortlist (or print it, if not configured)
-    Run->>TV: push shortlisted symbols to your watchlist (if enabled)
+    Run->>Bodhi: today's real shortlist, if BODHI_ENABLED
+    Bodhi-->>Run: per-symbol verdict (if parseable) + full report
+    Run->>TG: send the shortlist, with any Bodhi verdicts inline
+    Run->>TV: push symbols Bodhi did NOT flag avoid/high-risk<br/>(all of them, if Bodhi didn't run or gave no verdict)
     Run->>XL: write today's dated sheet (selected + top-10 watchlist)
     Run->>You: save output/analysis_DATE.json
 ```
@@ -276,8 +285,13 @@ ai-equity-analyst/
 │   └── price_tracker.py           ← standalone tool, separate from agents/ — appends a real dated price
 │                                     column to every past sheet in portfolio_tracker.xlsx, 0 AI calls
 │
+├── integrations/
+│   ├── bodhi_client.py            ← optional: generic start-run/poll/extract REST client for Bodhi
+│   ├── bodhi_risk_insights.py     ← optional: builds a real portfolio from today's shortlist, calls Bodhi
+│   └── run_bodhi_risk_insight.py  ← standalone: get a Bodhi insight without a full re-run
+│
 ├── .mcp.json                      ← registers the local tradingview-mcp server for this project
-└── output/                        ← each run's full analysis (JSON) + portfolio_tracker.xlsx
+└── output/                        ← each run's full analysis (JSON) + portfolio_tracker.xlsx + Bodhi reports
 ```
 
 For exactly what each file does internally — every function, every real
@@ -297,6 +311,7 @@ formula, every API endpoint — see **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
 | **ChromaDB** (local) | Stores real price/score history per stock for the audit/delta system | `memory/memory_layer.py` | ❌ local, no key |
 | **LangSmith** | Optional: traces every AI call and pipeline step for auditing/debugging | `observability.py` | ✅ yes (optional, free tier) |
 | **TradingView Desktop** | Optional: real watchlist push — no API, no key; drives your already-logged-in Desktop app locally over Chrome DevTools Protocol | `alerts/tradingview_watchlist.py` | ❌ local only, zero credentials |
+| **Bodhi** | Optional: an extra, external AI-driven risk read on today's real shortlist | `integrations/bodhi_risk_insights.py` | ✅ yes (optional, PAT token) |
 | **your file or the dashboard form** | Your investor profile | `profile/profile_loader.py` | ❌ local |
 
 Everything else — RSI, moving averages, beta, drawdown, volatility, ATR,
@@ -434,6 +449,9 @@ Opens at `http://localhost:8501`. From there you can:
 - **Update the price tracker** — **📒 Update price tracker** runs
   `tracker/price_tracker.py` for you, appending a real dated price column
   to every past sheet in `output/portfolio_tracker.xlsx`.
+- **Get a Bodhi Risk Insight** — **🧠 Get Bodhi Risk Insight** (if
+  `BODHI_ENABLED=true`) sends the most recent saved shortlist to Bodhi and
+  shows its real answer in the log, and on Telegram.
 
 ---
 
@@ -582,6 +600,79 @@ only fetched once per run, no matter how many sheets it appears in.
 
 ---
 
+## 🧠 Bodhi risk verification before Telegram/TradingView (optional)
+
+If you have a **Bodhi** workflow (Sapient's internal multi-agent AI
+platform — a separate system from this app), every swing run can send it
+today's real shortlist — every field the Decision Agent produced:
+bull/bear case, opportunity score, target price, ₹ allocation — and use
+its answer to **gate what goes to TradingView**, before Telegram/TradingView
+are touched at all. It's off by default and never blocks a run:
+
+```bash
+BODHI_ENABLED=true
+BODHI_BASE_URL=https://your-bodhi-instance
+BODHI_PAT_TOKEN=your-personal-access-token
+BODHI_TASK_ID=your-workflow-task-id
+BODHI_WORKFLOW_ID=your-workflow-id
+# match your workflow's Start Node / Workflow Variables names —
+# these are the confirmed-working defaults (no spaces allowed)
+BODHI_PORTFOLIO_VARIABLE=Investmentportfolio
+BODHI_QUERY_VARIABLE=Query_for_risk_assessment
+```
+
+**The Bodhi workflow this was built and tested against**, if you want to
+recreate it exactly rather than build your own from scratch:
+```
+Start Node → Risk Analyst Agent → Contrarian Agent → End Node
+                     │
+              MCP Tool: bodhi-deep-research
+```
+- **Risk Analyst Agent** — reads the portfolio JSON and risk question from
+  the Start Node's Workflow Variables (referenced in its prompt as
+  `{{$var[Investmentportfolio]}}` / `{{$var[Query_for_risk_assessment]}}`),
+  and researches real, current risk factors per stock using the
+  `bodhi-deep-research` MCP tool wired to its `tool` port.
+- **Contrarian Agent** — reads the Risk Analyst's output
+  (`{{Risk Analyst Agent[data.result.response]}}`) and the original
+  portfolio, red-team-challenges it, and is explicitly prompted to close
+  with a `{"verdicts": [{"symbol", "verdict", "notes"}]}` JSON block.
+- **End Node** — its "Configure Workflow Output" is set to
+  `{{Contrarian Agent[data.result.response]}}`, so the workflow's official
+  output is the Contrarian's final answer.
+- **No UI Node** — a UI Node pauses a run waiting for a human to fill in a
+  form, which breaks an API-triggered run. Workflow Variables (set via the
+  Start Node) are the entry point an API call can actually populate.
+
+**What happens:** `integrations/bodhi_risk_insights.py` sends the real
+shortlist as JSON text plus the risk question (with an explicit ask for
+that `"verdicts"` array) as two workflow variables. If Bodhi's answer
+contains that array:
+- **Telegram** shows every pick either way, with Bodhi's verdict line added
+  under the ones it commented on — nothing is hidden.
+- **TradingView** only gets symbols Bodhi did *not* mark `avoid`/high-risk —
+  the verified subset becomes the actionable watchlist.
+- Bodhi's full narrative report is also sent as its own Telegram message
+  and saved to `output/bodhi_risk_insight_DATE.txt`.
+
+If Bodhi is off, unreachable, times out, or its answer doesn't contain a
+parseable verdict array, **nothing is filtered** — every shortlisted
+symbol still goes to TradingView, exactly as before this integration
+existed. Get a verification pass without a full re-run via
+`uv run python integrations/run_bodhi_risk_insight.py` (or the dashboard's
+🧠 button) — it reuses the most recently saved shortlist.
+
+**Confirmed working end-to-end** against a live Bodhi run — a real
+shortlist in, genuinely stock-specific research and a red-teamed challenge
+out, with a clean parseable verdict per symbol. One thing to know if you
+build your own workflow instead of copying the one above: Bodhi's REST API
+response nests the real per-node results three levels deep, at
+`exec_metadata.allOutputs.<run>.<node>` — not at the top level of the
+response — which is what `integrations/bodhi_client.py`'s
+`extract_bodhi_answer()` reads from.
+
+---
+
 ## 🔭 Tracing every AI call (LangSmith, optional)
 
 Set these in `.env` and every real Gemini call, plus every pipeline step,
@@ -665,6 +756,11 @@ formula used.
 | `[tradingview] skipped: timed out` | TradingView Desktop isn't running with the debug port enabled | launch it via `launch_tv_debug_mac.sh` before running |
 | `[tradingview] skipped: 'node' not found, or tradingview-mcp isn't cloned` | `TRADINGVIEW_CLI_PATH` is wrong, or the repo/Node.js isn't installed | recheck the setup steps above |
 | `RuntimeError: No workbook found` from `price_tracker.py` | you haven't run `run.py` yet this session | run the swing scan at least once first — there's nothing to track yet |
+| `[bodhi] skipped: Bodhi isn't configured` | one or more `BODHI_*` vars missing | set `BODHI_PAT_TOKEN`, `BODHI_TASK_ID`, `BODHI_WORKFLOW_ID`, `BODHI_BASE_URL` in `.env` |
+| `[bodhi] run completed but no response text could be found` | your workflow's End Node isn't configured with an output value (its "Configure Workflow Output" is empty), and no node in `exec_metadata.allOutputs` had a real response either | open the End Node, set its output to `{{<Your Final Agent>[data.result.response]}}`, save, and re-run |
+| Telegram shows literal text like `{{Contrarian Agent[data.result.response]}}` | a stray character (often typed by hand instead of using Bodhi's 🔗 variable picker) broke that chip, so Bodhi left it unresolved as raw text | re-open the field, delete it, and re-insert the chip via the 🔗 picker instead of typing it |
+| Risk Analyst/Contrarian prompt shows `null` for the portfolio/query | the prompt still references a removed/renamed node (e.g. a deleted UI Node) instead of the current Workflow Variables | update the prompt to reference `{{$var[YourVariableName]}}`, matching your Start Node's actual variable names |
+| `RuntimeError: No saved runs found` from `run_bodhi_risk_insight.py` | you haven't run `run.py` yet this session | run the swing scan at least once first — there's no shortlist to send yet |
 
 ---
 

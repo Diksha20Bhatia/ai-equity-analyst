@@ -294,22 +294,32 @@ plain Python:
   the remaining uncapped picks. This is a real, deterministic allocation
   algorithm — never an AI guess.
 
-### Step 8 — Save and send
-The finished shortlist(s) are saved to `output/analysis_DATE.json`, sent
-to your Telegram (split into multiple messages if the combined text is
-over Telegram's 4096-character limit), and today's real scores are stored
-in Memory for tomorrow's delta comparison. Two more things happen here,
-both optional/always-on in different ways:
-- **`alerts/excel_report.py`** (always on, zero AI) writes today's
-  deduped shortlist and the full top-10 watchlist into a new dated sheet
-  in `output/portfolio_tracker.xlsx` — creating the workbook on the first
-  run, replacing that day's sheet on a same-day re-run, leaving every
-  other date's sheet untouched.
+### Step 8 — Verify, save and send
+Today's real scores are stored in Memory for tomorrow's delta comparison,
+and the finished shortlist(s) saved to `output/analysis_DATE.json`. Before
+anything goes out, three more things happen, in this order:
+- **`integrations/bodhi_risk_insights.py`** (only if `BODHI_ENABLED=true`)
+  sends today's real shortlist to your Bodhi workflow and waits for its
+  answer — see Part 3D. If it finds a per-symbol verdict, that verdict
+  gets shown inline in the Telegram alert and any `avoid`/high-risk symbol
+  is excluded from the TradingView push below. If Bodhi is off,
+  unreachable, or gives no parseable verdict, nothing changes from before
+  this integration existed.
+- **Telegram** gets the shortlist (split into multiple messages if the
+  combined text is over Telegram's 4096-character limit), plus, if Bodhi
+  ran, a second message with its full narrative report.
 - **`alerts/tradingview_watchlist.py`** (only if you've set
-  `TRADINGVIEW_WATCHLIST_ENABLED=true`) pushes the same shortlisted
-  symbols to your real TradingView watchlist. This is a local-only
-  connection to your own already-running Desktop app — if it isn't open,
-  this step just logs a skip message and everything else still completes.
+  `TRADINGVIEW_WATCHLIST_ENABLED=true`) pushes the Bodhi-approved subset
+  of shortlisted symbols to your real TradingView watchlist. This is a
+  local-only connection to your own already-running Desktop app — if it
+  isn't open, this step just logs a skip message and everything else
+  still completes.
+
+Finally, **`alerts/excel_report.py`** (always on, zero AI) writes today's
+deduped shortlist and the full top-10 watchlist into a new dated sheet in
+`output/portfolio_tracker.xlsx` — creating the workbook on the first run,
+replacing that day's sheet on a same-day re-run, leaving every other
+date's sheet untouched.
 
 ---
 
@@ -448,6 +458,110 @@ since I last checked," not "how has it moved since day one."
 
 ---
 
+## Part 3D — Bodhi risk verification (`integrations/bodhi_risk_insights.py`)
+
+Optional (`BODHI_ENABLED=true`), and best-effort: called between Step 7
+(Decision Agent) and Step 8 (Telegram/TradingView/Excel) of the swing
+pipeline. A failure here is logged and swallowed, never fatal — the same
+pattern as the TradingView push — and if it fails, Step 8 proceeds exactly
+as if Bodhi didn't exist. Bodhi is a separate, external multi-agent AI
+platform (not part of this codebase); this is a REST client plus a
+parser for whatever it answers with, confirmed working end-to-end against
+a live, purpose-built Bodhi workflow.
+
+### The actual Bodhi workflow this talks to
+```
+Start Node → Risk Analyst Agent → Contrarian Agent → End Node
+                     │
+              MCP Tool: bodhi-deep-research
+```
+- **Start Node / Workflow Variables** hold the two entry-point variables
+  (`Investmentportfolio`, `Query_for_risk_assessment` by default — Bodhi
+  variable names can't contain spaces). Deliberately **not** a UI Node: a
+  UI Node pauses a run waiting for a human to fill in a form in Bodhi's
+  own web UI, which breaks an API-triggered run (confirmed: this was the
+  original design, and it failed every time it was triggered headlessly —
+  "waiting on a form no one's there to fill in").
+- **Risk Analyst Agent** reads both variables via
+  `{{$var[Investmentportfolio]}}` / `{{$var[Query_for_risk_assessment]}}`
+  in its system prompt, and researches real, current, stock-specific risk
+  factors using the `bodhi-deep-research` MCP tool wired to its `tool`
+  port.
+- **Contrarian Agent** reads the Risk Analyst's output via
+  `{{Risk Analyst Agent[data.result.response]}}` plus the original
+  portfolio, red-team-challenges it (confirmed in a live run: it overrode
+  a Risk Analyst "caution" verdict to "clear," judging the cited risks
+  already priced into the stock's valuation), and closes with a
+  `{"verdicts": [...]}` JSON block per the prompt's explicit instruction.
+- **End Node**'s "Configure Workflow Output" is set to
+  `{{Contrarian Agent[data.result.response]}}` — this is what makes the
+  Contrarian's answer the workflow's official, retrievable output.
+
+### Step 1 — Build a real, full-detail shortlist
+`_shortlist_payload()` dedupes the shortlist across every risk tier you
+ran and keeps every field the Decision Agent actually produced — symbol,
+sector (from `analyses`), action, opportunity score, confidence,
+conviction, current/target price, bull case, bear case, risk %, ₹
+allocated, tier(s). `_portfolio_text()` turns that into JSON text for the
+portfolio variable; `_query_text()` builds the query variable's value —
+your configured risk question, plus an explicit ask for a `"verdicts"`
+JSON array (`{"symbol", "verdict": "clear"|"caution"|"avoid", "notes"}`).
+
+### Step 2 — Start a run, poll, extract the answer
+`integrations/bodhi_client.py` is a start-run / poll / extract-answer
+client: `POST .../tasks/{task_id}/runs` with both fields as workflow
+variables (names set by `BODHI_PORTFOLIO_VARIABLE` / `BODHI_QUERY_VARIABLE`),
+poll `GET .../runs/{run_id}` until `status` is a completed/failed state.
+
+**Where the real answer actually lives in that response — confirmed
+against a real raw API payload, not a guess:** the top level of the run
+object is mostly bookkeeping (`id`, `status`, `startedAt`/`finishedAt`,
+`overrides` — what you sent) plus `exec_metadata`, which itself holds a
+full copy of the workflow's *definition* (every node's stored config —
+including any node's raw, unresolved `{{...}}` template text, which looks
+deceptively like real content) alongside the one field that actually
+matters: `exec_metadata.allOutputs`. That's shaped as
+`{<run_name>: {<node_name>: {"data": {...}, "status": ...}}}`, and inside
+it, `End → data → result` is the real, resolved final answer.
+`extract_bodhi_answer()` reads this path first — preferring the `End`
+node's result, falling back to the last agent-shaped node if there's no
+End node — and only falls back further (checking `outputs`/`result` at
+the top level, then a last-resort fuzzy text search) for a differently-
+shaped Bodhi response. That fuzzy fallback is a genuine footgun: it's what
+originally (before this was fixed) matched a node's *stored, unresolved
+template config* instead of its *real output*, and returned that as if it
+were the answer — a real, observed bug now fixed by checking the correct
+path first.
+
+### Step 3 — Parse a per-symbol verdict, if there is one
+`_parse_verdicts()` looks for a JSON array/object anywhere in Bodhi's
+answer text (inside a fenced ```` ```json ```` block or not) whose items
+have both a `"symbol"` and a `"verdict"` key. If your workflow's final
+agent wasn't asked to return that shape, this returns `None` — Bodhi's
+narrative report still gets shown, nothing gets filtered downstream.
+Symbols whose verdict text contains a flag keyword (`avoid`, `high risk`,
+`flag`, `reject`, ...) go into `flagged_symbols`.
+
+### Step 4 — What `run.py` does with the result
+`verify_shortlist()` returns `{ran, report, verdicts, flagged_symbols}`.
+`run.py` builds the Telegram alert with each pick's Bodhi verdict shown
+inline (if any), sends Bodhi's full report as a separate Telegram message,
+and pushes only the *unflagged* symbols to TradingView — see Step 8 in
+Part 3. Run this on its own, without re-running the whole swing pipeline,
+via `integrations/run_bodhi_risk_insight.py` (loads the most recent
+`output/analysis_*.json`) — or the dashboard's 🧠 button, which shells out
+to that same script (it doesn't touch TradingView on its own; that gating
+only happens inside a real `run.py` run).
+
+**If you build your own Bodhi workflow instead of copying the one above**,
+two things depend on it, not this codebase — `BODHI_PORTFOLIO_VARIABLE` /
+`BODHI_QUERY_VARIABLE` must match your Start Node's actual variable names,
+and your final agent's prompt needs to actually be asked to return the
+`"verdicts"` JSON array for the TradingView gate to have anything to act
+on. Both are flagged in the module's own docstring.
+
+---
+
 ## Part 4 — Every real formula used, in plain English
 
 ### Swing pipeline — `data/signals.py` (zero AI, zero network calls)
@@ -503,6 +617,7 @@ since I last checked," not "how has it moved since day one."
 | Tracing AI calls | LangSmith, via the official `langsmith` Python SDK's `@traceable` decorator | `observability.py`, applied across `agents/*.py`, `run.py`, `intraday_run.py`, `intraday_backtest.py` | Yes, optional |
 | Pushing to TradingView | [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp) CLI, driving your logged-in TradingView Desktop app over Chrome DevTools Protocol on `localhost` — not a public API, no credentials | `alerts/tradingview_watchlist.py` | No (local only) |
 | Writing the workbook | `openpyxl`, a local Python library — no network call at all | `alerts/excel_report.py`, `tracker/price_tracker.py` | No |
+| Bodhi Risk Insight | Bodhi's REST API (`POST/GET .../tasks/{task_id}/runs`), a separate external AI platform | `integrations/bodhi_client.py`, `integrations/bodhi_risk_insights.py` | Yes, optional (PAT token) |
 
 ---
 

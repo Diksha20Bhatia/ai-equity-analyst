@@ -204,6 +204,7 @@ flowchart TB
         Telegram[("Telegram Bot API")]
         LS[("LangSmith — optional")]
         TV[("TradingView Desktop<br/>optional, local only")]
+        BodhiSvc[("Bodhi — optional,<br/>external AI platform")]
     end
 
     subgraph Swing["SWING PIPELINE  ·  run.py  ·  once a day"]
@@ -213,8 +214,9 @@ flowchart TB
         S3["3. Analyst + Chart Reader + Skeptic<br/>score the watchlist"]
         S4["4. News Reader — AI call"]
         S5["5. Decision Manager — AI call<br/>final shortlist + ₹ split"]
-        S6["6. Write Excel sheet +<br/>push to TradingView (optional)"]
-        S1 --> S2 --> S3 --> S4 --> S5 --> S6
+        S6["6. Send shortlist to Bodhi<br/>for risk verification (optional)"]
+        S7["7. Telegram (+ verdicts) +<br/>TradingView (verdict-gated) +<br/>write Excel sheet"]
+        S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
     end
 
     subgraph Intraday["INTRADAY PIPELINE  ·  intraday_run.py  ·  market hours only"]
@@ -235,7 +237,8 @@ flowchart TB
     Gemini --> I5
     Swing --> Telegram
     Intraday --> Telegram
-    S6 --> TV
+    S6 --> BodhiSvc
+    S7 --> TV
     Swing --> Dash[("Web dashboard")]
     Intraday --> Dash
     Tracker["Price Tracker<br/>separate, standalone tool"] -.->|updates past sheets<br/>with real prices| S6
@@ -252,11 +255,12 @@ flowchart TB
 | `data/` | Everything that fetches or calculates real numbers — prices, news, index lists, and all the maths formulas (RSI, volatility, beta, etc.) |
 | `alerts/` | Sends the finished shortlist to Telegram, writes the Excel workbook, and (optional) pushes to TradingView |
 | `tracker/` | A separate, standalone tool for checking how past picks have performed — not part of the daily pipeline |
+| `integrations/` | Optional bridge to Bodhi — sends today's real shortlist for risk verification, gates the TradingView push on its verdict (see §8) |
 | `memory/` | Remembers each stock's last real score/price so we can say "this changed since last time" |
 | `profile/` | Reads your investor profile (risk appetite, capital, sector preferences) from a document or the dashboard form |
 | `run.py` / `intraday_run.py` / `intraday_backtest.py` | The three things you actually run |
 | `dashboard.py` | The web UI (built with Streamlit) |
-| `observability.py` | Optional tracing hookup (see §9) |
+| `observability.py` | Optional tracing hookup (see §10) |
 
 ---
 
@@ -272,7 +276,25 @@ A shortlist is only useful if you can later check whether it was any good. Two f
 
 ---
 
-## 8. Where the data comes from, and what needs a paid key
+## 8. Bringing in Bodhi as a risk-verification gate (optional)
+
+This is where the project stops being self-contained: with `BODHI_ENABLED=true`, every run hands its real, finished shortlist to a **Bodhi** workflow — Sapient's own internal multi-agent AI platform — for an independent, external second opinion, **before** anything goes out to Telegram or TradingView.
+
+**The Bodhi workflow itself** is a small, purpose-built two-agent pipeline: a **Risk Analyst** that researches current, real risk factors per stock (using Bodhi's own live web-research tool), followed by a **Contrarian** that red-team-challenges the Risk Analyst's findings before signing off with a verdict per stock. It's deliberately not a huge multi-agent system — two agents with a genuine second opinion baked in (the Contrarian doesn't just repeat the Risk Analyst, it's been seen overruling it) is enough to make the "independent review" real.
+
+**What actually gets sent.** Every real field our own Decision Manager produced for today's picks — symbol, sector, bull case, bear case, opportunity score, target price, ₹ allocated — not a trimmed summary.
+
+**What comes back, and what we do with it.** If Bodhi's answer includes a clear verdict per stock (clear / caution / avoid), our own Telegram alert shows that verdict inline next to each pick — so nothing is hidden — and **any stock Bodhi flags as avoid/high-risk is left off the TradingView watchlist**, so the "actionable" list has had two independent AI systems weigh in on it, not just one. If Bodhi can't be reached, or its answer doesn't contain a clear verdict, nothing is filtered — every pick goes to TradingView exactly as it would without Bodhi involved. Bodhi's full narrative report is also saved and sent to Telegram as its own message either way.
+
+**Why this is worth showing.** It's a concrete example of two AI systems working together in a real pipeline, not two separate demos bolted together: our own quantitative, data-driven shortlist feeds a second, independent AI review, and that review's verdict has a real, visible effect on what actually gets acted on.
+
+**On-demand, too.** You don't need a full run to get a verification pass — `integrations/run_bodhi_risk_insight.py`, or the dashboard's 🧠 button, sends the most recently saved shortlist to Bodhi directly.
+
+**Status: confirmed working end-to-end**, tested against a live Bodhi run — a real shortlist went in, the Risk Analyst produced genuinely stock-specific research (not generic filler), the Contrarian pushed back with real substance (in one test run it overturned the Risk Analyst's own "caution" call on a stock, judging the cited risks already priced in), and a clean verdict per stock came back and correctly drove what got sent to Telegram and TradingView. It's off by default and never blocks a run if it isn't configured or the call fails.
+
+---
+
+## 9. Where the data comes from, and what needs a paid key
 
 | Source | What it gives us | Cost |
 |---|---|---|
@@ -283,12 +305,13 @@ A shortlist is only useful if you can later check whether it was any good. Two f
 | **Telegram** | Delivers the finished shortlist as a phone notification | Free, needs a one-time bot setup (optional) |
 | **LangSmith** | Optional: lets us see every AI call and every step of a run in a visual trace, for debugging/monitoring | Free tier available (optional) |
 | **TradingView Desktop** | Optional: real watchlist push, local-only, zero credentials | Free (needs your own TradingView account) |
+| **Bodhi** | Optional: an extra, external AI risk read on today's real shortlist | Depends on your Bodhi account/plan (PAT token) |
 
-**In short: only one thing costs money — the AI calls to Gemini — and everything else feeding into the analysis is free, public data, or runs entirely on your own machine.** ChromaDB (our "memory") and the Excel workbook also run entirely locally, no cost, no external service.
+**In short: only two things cost money — the AI calls to Gemini, and, if turned on, the optional Bodhi Risk Insight — and everything else feeding into the analysis is free, public data, or runs entirely on your own machine.** ChromaDB (our "memory") and the Excel workbook also run entirely locally, no cost, no external service.
 
 ---
 
-## 9. Can we see what the AI is actually doing? (Observability)
+## 10. Can we see what the AI is actually doing? (Observability)
 
 Yes. We added an optional integration with **LangSmith**, an AI-monitoring tool. When it's switched on:
 - Every run shows up as one visual timeline: which agent ran, in what order, what it decided.
@@ -299,7 +322,7 @@ This gives us the ability to audit, cost-track, and debug every AI decision afte
 
 ---
 
-## 10. Guardrails — how we keep this trustworthy
+## 11. Guardrails — how we keep this trustworthy
 
 - **No fake data, ever.** If a real data source is unreachable, the app stops and shows the real error — it never quietly substitutes a made-up number to keep going.
 - **No silent fallbacks.** Early versions had a "demo mode" and a rule-based backup plan for when the AI was unreachable. Both were removed — either the analysis is real, or you're told clearly that it failed.
@@ -308,7 +331,7 @@ This gives us the ability to audit, cost-track, and debug every AI decision afte
 
 ---
 
-## 11. Quick glossary
+## 12. Quick glossary
 
 - **LLM / AI call** — one request sent to Google's Gemini model, the only step in this system that costs money and "thinks" rather than calculates.
 - **Batched call** — one AI request that covers *every* stock on the watchlist at once, instead of one request per stock.

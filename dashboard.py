@@ -401,6 +401,26 @@ def render_run_controls():
         else:
             st.sidebar.error("Price tracker failed — see log above.")
 
+    st.sidebar.divider()
+    st.sidebar.header("Bodhi Risk Insight")
+    st.sidebar.caption(
+        "Sends today's real shortlist to a Bodhi workflow for an extra, "
+        "AI-driven geopolitical/macro/contrarian risk read. Requires "
+        "BODHI_ENABLED=true and the Bodhi variables set in .env."
+    )
+    if st.sidebar.button("🧠 Get Bodhi Risk Insight", use_container_width=True):
+        with st.spinner("Sending today's shortlist to Bodhi and waiting for its analysis..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "integrations/run_bodhi_risk_insight.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("Bodhi run log", expanded=True):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+        if proc.returncode == 0:
+            st.sidebar.success("Bodhi Risk Insight received — see the log above, or Telegram.")
+        else:
+            st.sidebar.error("Bodhi call failed — see log above.")
+
 
 # ----------------------------------------------------------------------
 # Main

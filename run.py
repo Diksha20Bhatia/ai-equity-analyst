@@ -19,15 +19,26 @@ It walks through the whole morning routine, in order:
   7. Decision Agent makes ONE batched AI call PER selected risk-appetite
      tier (a plain "moderate" investor gets 1 call; someone who selected
      conservative + aggressive gets 2, one shortlist per tier).
-  8. Store today's scores into memory, send a Telegram alert, (if
-     TRADINGVIEW_WATCHLIST_ENABLED=true) push today's shortlisted symbols
-     into your real TradingView watchlist, and write today's results as a
-     new dated sheet in output/portfolio_tracker.xlsx — see
-     alerts/tradingview_watchlist.py and alerts/excel_report.py.
+  8. Store today's scores into memory. Then, if BODHI_ENABLED=true, send
+     today's real shortlist to a Bodhi workflow for risk verification and
+     wait for its answer (see integrations/bodhi_risk_insights.py) — its
+     per-symbol verdict (if it returns one) is shown inline in the
+     Telegram alert, and any symbol it flags avoid/high-risk is left out
+     of the TradingView push (Telegram still shows every pick either way).
+     Finally: send the Telegram alert, (if TRADINGVIEW_WATCHLIST_ENABLED=
+     true) push the remaining shortlisted symbols into your real
+     TradingView watchlist, and write today's results as a new dated
+     sheet in output/portfolio_tracker.xlsx — see
+     alerts/tradingview_watchlist.py and alerts/excel_report.py. If Bodhi
+     is off, unreachable, or returns no parseable verdict, nothing is
+     filtered — every symbol goes to TradingView exactly as before this
+     integration existed.
 
 To see how past picks have actually performed since they were listed,
 run tracker/price_tracker.py separately — a standalone tool that appends
-a new dated price column to every past sheet in that workbook.
+a new dated price column to every past sheet in that workbook. To get an
+on-demand Bodhi Risk Insight without a full re-run, run
+integrations/run_bodhi_risk_insight.py separately instead.
 
 2 AI calls happen per run for a single risk tier, no matter how big the
 universe is — see README.md for why. Selecting more than one risk-appetite
@@ -50,6 +61,7 @@ from data.nse_universe import resolve_universe
 from memory.memory_layer import MemoryLayer
 from profile.profile_loader import load_profile
 from alerts import telegram_alert, tradingview_watchlist, excel_report
+from integrations import bodhi_risk_insights
 
 from agents.research_agent import ResearchAgent
 from agents.fundamental_agent import FundamentalAgent
@@ -183,10 +195,21 @@ def main():
             "action": ", ".join(actions_by_symbol.get(a["symbol"], ["not_shortlisted"])),
         })
 
-    alert = format_alert(results_by_tier)
-    banner("STEP 6 — Final output")
+    banner("STEP 6 — Bodhi risk verification (optional)")
+    bodhi_result = bodhi_risk_insights.verify_shortlist(results_by_tier, analyses)
+
+    alert = format_alert(results_by_tier, bodhi_result.get("verdicts"))
+    banner("STEP 7 — Final output")
     telegram_alert.send(alert)
-    tradingview_watchlist.add_symbols(list(actions_by_symbol.keys()))
+    if bodhi_result["ran"]:
+        telegram_alert.send("*🧠 Bodhi Risk Insight — full report*\n\n" + bodhi_result["report"])
+
+    # TradingView only gets symbols Bodhi didn't flag as avoid/high-risk.
+    # If Bodhi didn't run (disabled, unreachable, or no verdict was found),
+    # flagged_symbols is empty and every shortlisted symbol still goes —
+    # unchanged from before this integration existed.
+    tv_symbols = [s for s in actions_by_symbol.keys() if s not in bodhi_result["flagged_symbols"]]
+    tradingview_watchlist.add_symbols(tv_symbols)
     excel_report.write_run(results_by_tier, analyses)
 
     # Save a copy to disk for your records (drop the raw price series first —
@@ -225,7 +248,7 @@ TIER_LABELS = {
 CONVICTION_EMOJI = {"HIGH": "🔥", "LOW": "👀"}
 
 
-def format_alert(results_by_tier: dict) -> str:
+def format_alert(results_by_tier: dict, bodhi_verdicts: dict = None) -> str:
     lines = ["*AI Equity Analyst — Today's Shortlist*", ""]
     lines.append(
         "_🔥 HIGH CONVICTION = data lines up cleanly, worth acting on. "
@@ -277,6 +300,9 @@ def format_alert(results_by_tier: dict) -> str:
             if pick.get("invalidation"):
                 lines.append(f"   What would change this view: {pick['invalidation']}")
             lines.append(f"   ⚠ Key risk: {pick.get('key_risk', '')}")
+            bodhi_v = (bodhi_verdicts or {}).get(pick["symbol"])
+            if bodhi_v:
+                lines.append(f"   🧠 Bodhi verdict: *{bodhi_v['verdict'].upper()}* — {bodhi_v['notes']}")
             lines.append("")
 
         cap = result.get("capital_summary", {})
