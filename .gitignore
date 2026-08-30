@@ -6,3 +6,5 @@ output/*.json
 # output/*.xlsx
 data/cache/
 profile/_dashboard/
+output/*.txt
+*.idea
