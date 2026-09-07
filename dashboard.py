@@ -20,6 +20,7 @@ Gemini/Telegram credentials are intentionally NOT editable here — they're
 secrets, not day-to-day knobs, and stay in .env only.
 """
 
+import datetime as dt
 import json
 import subprocess
 import sys
@@ -46,18 +47,181 @@ SECTOR_OPTIONS = [
     "Media & Entertainment", "Tobacco", "Alcohol",
 ]
 
-# Palette (validated categorical/status hues — see the dataviz skill)
-COLOR_BLUE = "#2a78d6"
-COLOR_ORANGE = "#eb6834"
-COLOR_YELLOW = "#eda100"
-COLOR_GOOD = "#0ca30c"
-COLOR_WARNING = "#fab219"
-COLOR_CRITICAL = "#d03b3b"
-COLOR_GRID = "#e1e0d9"
-COLOR_MUTED = "#898781"
-COLOR_SURFACE = "#fcfcfb"
+# Trading-terminal dark palette — up/down are the two colors that actually
+# carry meaning (gain/loss), everything else is neutral chrome.
+COLOR_BG = "#0d1117"
+COLOR_PANEL = "#161b22"
+COLOR_PANEL_ALT = "#1c2129"
+COLOR_BORDER = "#2a2f3a"
+COLOR_TEXT = "#e6edf3"
+COLOR_BLUE = "#2f81f7"
+COLOR_ORANGE = "#f0883e"
+COLOR_YELLOW = "#e3b341"
+COLOR_GOOD = "#26d07c"       # gains / accumulate / high conviction
+COLOR_WARNING = "#e3b341"    # hold / neutral
+COLOR_CRITICAL = "#f85149"   # losses / avoid / poor fit
+COLOR_GRID = "#21262d"
+COLOR_MUTED = "#8b949e"
+COLOR_SURFACE = COLOR_PANEL
 
 SCORE_COLORS = {"Fundamental": COLOR_BLUE, "Technical": COLOR_ORANGE, "Risk": COLOR_YELLOW}
+
+
+def inject_terminal_css():
+    st.markdown(f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+    html, body, [class*="css"] {{
+        font-family: 'Inter', -apple-system, sans-serif;
+    }}
+
+    /* Monospace everywhere a real number shows up — ticker digits should
+       not visually jitter as they change width. */
+    div[data-testid="stMetricValue"],
+    div[data-testid="stMetricDelta"],
+    code, .terminal-mono {{
+        font-family: 'JetBrains Mono', 'SF Mono', monospace !important;
+    }}
+
+    div[data-testid="stMetricValue"] {{
+        font-size: 1.35rem;
+        font-weight: 700;
+    }}
+    div[data-testid="stMetricLabel"] {{
+        color: {COLOR_MUTED};
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }}
+
+    /* Sidebar section headers → terminal-style uppercase labels */
+    section[data-testid="stSidebar"] h2 {{
+        font-size: 0.78rem !important;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: {COLOR_MUTED} !important;
+        border-bottom: 1px solid {COLOR_BORDER};
+        padding-bottom: 6px;
+        margin-top: 4px !important;
+    }}
+    section[data-testid="stSidebar"] {{
+        background: {COLOR_PANEL};
+        border-right: 1px solid {COLOR_BORDER};
+    }}
+
+    /* Cards (st.container(border=True)) → trading-ticket look */
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        background: {COLOR_PANEL};
+        border: 1px solid {COLOR_BORDER} !important;
+        border-radius: 6px;
+    }}
+
+    div[data-testid="stExpander"] {{
+        background: {COLOR_PANEL};
+        border: 1px solid {COLOR_BORDER} !important;
+        border-radius: 6px;
+    }}
+
+    /* Top ticker strip */
+    .ticker-strip {{
+        display: flex;
+        gap: 0;
+        overflow-x: auto;
+        border: 1px solid {COLOR_BORDER};
+        border-radius: 6px;
+        background: {COLOR_PANEL};
+        margin-bottom: 1rem;
+    }}
+    .ticker-chip {{
+        flex: 0 0 auto;
+        padding: 10px 18px;
+        border-right: 1px solid {COLOR_BORDER};
+        font-family: 'JetBrains Mono', monospace;
+        white-space: nowrap;
+    }}
+    .ticker-chip:last-child {{ border-right: none; }}
+    .ticker-symbol {{
+        font-weight: 700;
+        font-size: 0.85rem;
+        letter-spacing: 0.02em;
+        color: {COLOR_TEXT};
+        margin-right: 8px;
+    }}
+    .ticker-price {{ color: {COLOR_TEXT}; margin-right: 8px; }}
+
+    /* Market status chip in the top bar */
+    .market-status {{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.78rem;
+        padding: 4px 12px;
+        border-radius: 20px;
+        border: 1px solid {COLOR_BORDER};
+        color: {COLOR_MUTED};
+    }}
+    .dot {{
+        width: 8px; height: 8px; border-radius: 50%;
+        display: inline-block;
+    }}
+
+    /* Card header symbol — big ticker-style type */
+    .ticket-symbol {{
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        color: {COLOR_TEXT};
+    }}
+
+    hr {{ border-color: {COLOR_BORDER} !important; }}
+
+    /* Sequential pipeline steps in the sidebar */
+    .step-row {{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 6px 0 2px 0;
+    }}
+    .step-badge {{
+        flex: 0 0 auto;
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        background: {COLOR_BLUE}22;
+        border: 1px solid {COLOR_BLUE}80;
+        color: {COLOR_BLUE};
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.72rem;
+        font-weight: 700;
+    }}
+    .step-title {{
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: {COLOR_TEXT};
+    }}
+    .step-connector {{
+        width: 1px;
+        height: 12px;
+        background: {COLOR_BORDER};
+        margin-left: 11px;
+    }}
+    section[data-testid="stSidebar"] .stButton button {{
+        border: 1px solid {COLOR_BORDER};
+        font-weight: 600;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def _step_header(n: int, title: str):
+    st.sidebar.markdown(
+        f"<div class='step-row'><span class='step-badge'>{n}</span>"
+        f"<span class='step-title'>{title}</span></div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ----------------------------------------------------------------------
@@ -126,22 +290,44 @@ def cached_history(symbol: str):
 # Charts
 # ----------------------------------------------------------------------
 def price_chart(symbol: str, hist) -> go.Figure:
-    fig = go.Figure(go.Scatter(
-        x=hist.index, y=hist["Close"],
-        mode="lines",
-        line=dict(color=COLOR_BLUE, width=2),
-        hovertemplate="%{x|%d %b %Y}<br>₹%{y:.2f}<extra></extra>",
-    ))
+    """A real candlestick + volume chart — the actual OHLCV history
+    already fetched, not a re-derived line — laid out the way a trading
+    terminal shows a stock: candles on top, volume underneath, shared
+    x-axis, no range slider clutter."""
+    from plotly.subplots import make_subplots
+
+    up = hist["Close"] >= hist["Open"]
+    vol_colors = [COLOR_GOOD if u else COLOR_CRITICAL for u in up]
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.72, 0.28], vertical_spacing=0.02,
+    )
+    fig.add_trace(go.Candlestick(
+        x=hist.index, open=hist["Open"], high=hist["High"], low=hist["Low"], close=hist["Close"],
+        increasing_line_color=COLOR_GOOD, increasing_fillcolor=COLOR_GOOD,
+        decreasing_line_color=COLOR_CRITICAL, decreasing_fillcolor=COLOR_CRITICAL,
+        name=symbol, showlegend=False,
+    ), row=1, col=1)
+    fig.add_trace(go.Bar(
+        x=hist.index, y=hist["Volume"], marker_color=vol_colors, marker_line_width=0,
+        showlegend=False, hovertemplate="Vol: %{y:,.0f}<extra></extra>",
+    ), row=2, col=1)
+
     fig.update_layout(
-        template="plotly_white",
-        height=240,
+        template="plotly_dark",
+        height=380,
         margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(showgrid=False, color=COLOR_MUTED),
-        yaxis=dict(showgrid=True, gridcolor=COLOR_GRID, color=COLOR_MUTED),
+        xaxis_rangeslider_visible=False,
         plot_bgcolor=COLOR_SURFACE,
         paper_bgcolor=COLOR_SURFACE,
+        font=dict(family="JetBrains Mono, monospace", color=COLOR_MUTED, size=11),
         showlegend=False,
+        hovermode="x unified",
     )
+    fig.update_xaxes(showgrid=False, color=COLOR_MUTED)
+    fig.update_yaxes(gridcolor=COLOR_GRID, color=COLOR_MUTED, row=1, col=1, title_text="₹")
+    fig.update_yaxes(gridcolor=COLOR_GRID, color=COLOR_MUTED, row=2, col=1, title_text="Vol")
     return fig
 
 
@@ -159,13 +345,14 @@ def score_chart(analysis: dict) -> go.Figure:
         hovertemplate="%{x}: %{y}/10<extra></extra>",
     ))
     fig.update_layout(
-        template="plotly_white",
+        template="plotly_dark",
         height=220,
         margin=dict(l=10, r=10, t=10, b=10),
         yaxis=dict(range=[0, 10], gridcolor=COLOR_GRID, color=COLOR_MUTED),
         xaxis=dict(color=COLOR_MUTED),
         plot_bgcolor=COLOR_SURFACE,
         paper_bgcolor=COLOR_SURFACE,
+        font=dict(family="JetBrains Mono, monospace", color=COLOR_MUTED, size=11),
         showlegend=False,
     )
     return fig
@@ -173,8 +360,38 @@ def score_chart(analysis: dict) -> go.Figure:
 
 def _badge(text: str, color: str) -> str:
     return (
-        f"<span style='background:{color}22;color:{color};padding:2px 10px;"
-        f"border-radius:4px;font-weight:600;font-size:0.8rem'>{text.upper()}</span>"
+        f"<span style='background:{color}1f;color:{color};padding:3px 10px;"
+        f"border:1px solid {color}55;border-radius:3px;font-weight:600;"
+        f"font-size:0.72rem;letter-spacing:0.04em;font-family:\"JetBrains Mono\",monospace'>"
+        f"{text.upper()}</span>"
+    )
+
+
+def _pct_span(pct) -> str:
+    """A colored, monospace +/- percentage — the ticker-tape convention."""
+    if pct is None:
+        return "<span style='color:#8b949e'>—</span>"
+    color = COLOR_GOOD if pct >= 0 else COLOR_CRITICAL
+    arrow = "▲" if pct >= 0 else "▼"
+    return (
+        f"<span style='color:{color};font-family:\"JetBrains Mono\",monospace;"
+        f"font-weight:600'>{arrow} {pct:+.2f}%</span>"
+    )
+
+
+def market_status_html() -> str:
+    """Real IST clock check (weekday + 09:15–15:30) — cosmetic status chip,
+    not a data source; NSE holidays aren't accounted for."""
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    ist = now_utc + dt.timedelta(hours=5, minutes=30)
+    is_weekday = ist.weekday() < 5
+    minutes = ist.hour * 60 + ist.minute
+    open_now = is_weekday and (9 * 60 + 15) <= minutes <= (15 * 60 + 30)
+    color = COLOR_GOOD if open_now else COLOR_MUTED
+    label = "NSE OPEN" if open_now else "NSE CLOSED"
+    return (
+        f"<span class='market-status'><span class='dot' style='background:{color}'></span>"
+        f"{label} · {ist.strftime('%H:%M')} IST</span>"
     )
 
 
@@ -326,7 +543,7 @@ def render_profile_builder():
 # Sidebar — universe/top_n + run trigger
 # ----------------------------------------------------------------------
 def render_run_controls():
-    st.sidebar.header("Scan settings")
+    st.sidebar.header("Scan Settings")
     env = read_env()
 
     with st.sidebar.form("settings_form"):
@@ -340,8 +557,14 @@ def render_run_controls():
             st.sidebar.success("Saved to .env")
 
     st.sidebar.divider()
-    st.sidebar.header("Run")
-    if st.sidebar.button("▶ Run swing analysis now", use_container_width=True):
+    st.sidebar.header("Run Pipeline")
+    st.sidebar.caption(
+        "Runs in this order automatically from step ①. Each step below can "
+        "also be re-triggered on its own, against the latest saved shortlist."
+    )
+
+    _step_header(1, "Run full swing analysis")
+    if st.sidebar.button("▶ Run swing analysis now", use_container_width=True, key="btn_swing"):
         # Always save whatever the profile widgets currently show, right
         # before running — so this run can NEVER silently use a stale
         # profile just because "Save profile" wasn't clicked separately.
@@ -360,35 +583,66 @@ def render_run_controls():
         else:
             st.sidebar.error("Run failed — see log above.")
 
-    st.sidebar.divider()
-    st.sidebar.header("Intraday")
-    st.sidebar.caption(
-        "Mechanical opening-range / VWAP scan, 0 AI calls — only meaningful "
-        "while the market is open (09:15–15:30 IST)."
-    )
-    if st.sidebar.button("⚡ Run intraday scan now", use_container_width=True):
-        with st.spinner("Scanning today's intraday bars..."):
+    st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
+    _step_header(2, "Bodhi risk verification")
+    st.sidebar.caption("Optional (BODHI_ENABLED=true) — an independent second opinion that gates step ④.")
+    if st.sidebar.button("🧠 Get Bodhi Risk Insight", use_container_width=True, key="btn_bodhi"):
+        with st.spinner("Sending today's shortlist to Bodhi and waiting for its analysis..."):
             proc = subprocess.run(
-                ["uv", "run", "python", "intraday_run.py"],
+                ["uv", "run", "python", "integrations/run_bodhi_risk_insight.py"],
                 cwd=ROOT, capture_output=True, text=True,
             )
-        with st.sidebar.expander("Intraday run log", expanded=proc.returncode != 0):
+        with st.sidebar.expander("Bodhi run log", expanded=True):
             st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
         if proc.returncode == 0:
-            st.sidebar.success("Intraday scan complete.")
-            st.cache_data.clear()
-            st.rerun()
+            st.sidebar.success("Bodhi Risk Insight received — see the log above, or Telegram.")
         else:
-            st.sidebar.error("Intraday scan failed — see log above.")
+            st.sidebar.error("Bodhi call failed — see log above.")
 
-    st.sidebar.divider()
-    st.sidebar.header("Price Tracker")
+    st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
+    _step_header(3, "Send Telegram alert")
+    st.sidebar.caption("Re-sends the latest saved shortlist to Telegram on demand.")
+    if st.sidebar.button("📨 Send Telegram alert", use_container_width=True, key="btn_telegram"):
+        with st.spinner("Sending the latest shortlist to Telegram..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "alerts/trigger_telegram.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("Telegram send log", expanded=proc.returncode != 0):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+        if proc.returncode == 0:
+            st.sidebar.success("Telegram alert sent.")
+        else:
+            st.sidebar.error("Telegram send failed — see log above.")
+
+    st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
+    _step_header(4, "Push to TradingView")
     st.sidebar.caption(
-        "Adds today's real price to every past sheet in "
-        "output/portfolio_tracker.xlsx, 0 AI calls. Run this whenever you "
-        "want to check how past picks have performed."
+        "Pushes the latest saved shortlist to your real TradingView watchlist. "
+        "Needs TRADINGVIEW_WATCHLIST_ENABLED=true and Desktop running with its "
+        "debug port on."
     )
-    if st.sidebar.button("📒 Update price tracker", use_container_width=True):
+    if st.sidebar.button("📺 Push to TradingView", use_container_width=True, key="btn_tv"):
+        with st.spinner("Pushing symbols to your TradingView watchlist..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "alerts/trigger_tradingview.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("TradingView push log", expanded=proc.returncode != 0):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+        if proc.returncode == 0:
+            st.sidebar.success("Pushed to TradingView.")
+        else:
+            st.sidebar.error("TradingView push failed — see log above.")
+
+    st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
+    _step_header(5, "Update price tracker")
+    st.sidebar.caption(
+        "Adds today's real price to every past sheet in both "
+        "portfolio_tracker.xlsx (swing) and intraday_tracker.xlsx "
+        "(intraday), 0 AI calls."
+    )
+    if st.sidebar.button("📒 Update price tracker", use_container_width=True, key="btn_tracker"):
         with st.spinner("Fetching real prices for every past pick..."):
             proc = subprocess.run(
                 ["uv", "run", "python", "tracker/price_tracker.py"],
@@ -402,24 +656,25 @@ def render_run_controls():
             st.sidebar.error("Price tracker failed — see log above.")
 
     st.sidebar.divider()
-    st.sidebar.header("Bodhi Risk Insight")
+    st.sidebar.header("Intraday · live, separate")
     st.sidebar.caption(
-        "Sends today's real shortlist to a Bodhi workflow for an extra, "
-        "AI-driven geopolitical/macro/contrarian risk read. Requires "
-        "BODHI_ENABLED=true and the Bodhi variables set in .env."
+        "Mechanical opening-range / VWAP scan, 0 AI calls — only meaningful "
+        "while the market is open (09:15–15:30 IST)."
     )
-    if st.sidebar.button("🧠 Get Bodhi Risk Insight", use_container_width=True):
-        with st.spinner("Sending today's shortlist to Bodhi and waiting for its analysis..."):
+    if st.sidebar.button("⚡ Run intraday scan now", use_container_width=True, key="btn_intraday"):
+        with st.spinner("Scanning today's intraday bars..."):
             proc = subprocess.run(
-                ["uv", "run", "python", "integrations/run_bodhi_risk_insight.py"],
+                ["uv", "run", "python", "intraday_run.py"],
                 cwd=ROOT, capture_output=True, text=True,
             )
-        with st.sidebar.expander("Bodhi run log", expanded=True):
+        with st.sidebar.expander("Intraday run log", expanded=proc.returncode != 0):
             st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
         if proc.returncode == 0:
-            st.sidebar.success("Bodhi Risk Insight received — see the log above, or Telegram.")
+            st.sidebar.success("Intraday scan complete.")
+            st.cache_data.clear()
+            st.rerun()
         else:
-            st.sidebar.error("Bodhi call failed — see log above.")
+            st.sidebar.error("Intraday scan failed — see log above.")
 
 
 # ----------------------------------------------------------------------
@@ -478,12 +733,26 @@ def render_stock_section(analysis: dict):
 
 def render_shortlist_card(pick: dict):
     with st.container(border=True):
-        badges = (
-            f"{conviction_badge(pick.get('conviction', ''))} "
-            f"{action_badge(pick.get('action', ''))} "
-            f"{portfolio_fit_badge(pick.get('portfolio_fit', ''))}"
-        )
-        st.markdown(f"### {pick['symbol']}  &nbsp; {badges}", unsafe_allow_html=True)
+        perf = pick.get("performance", {})
+        day_pct = perf.get("1w", {}).get("change_pct")  # nearest real % change we have
+
+        header_l, header_r = st.columns([3, 2])
+        with header_l:
+            price_txt = f"₹{pick['current_price']:,.2f}" if pick.get("current_price") is not None else ""
+            st.markdown(
+                f"<span class='ticket-symbol'>{pick['symbol']}</span>"
+                f"&nbsp;&nbsp;<span class='terminal-mono' style='font-size:1.15rem;color:{COLOR_TEXT}'>{price_txt}</span>"
+                f"&nbsp;&nbsp;{_pct_span(day_pct)}",
+                unsafe_allow_html=True,
+            )
+        with header_r:
+            badges = (
+                f"{action_badge(pick.get('action', ''))} "
+                f"{conviction_badge(pick.get('conviction', ''))} "
+                f"{portfolio_fit_badge(pick.get('portfolio_fit', ''))}"
+            )
+            st.markdown(f"<div style='text-align:right;padding-top:6px'>{badges}</div>", unsafe_allow_html=True)
+
         if pick.get("conviction_note"):
             st.caption(pick["conviction_note"])
 
@@ -492,7 +761,6 @@ def render_shortlist_card(pick: dict):
         cols[1].metric("Confidence", f"{pick.get('confidence', '?')}%")
         if pick.get("current_price") is not None:
             cols[2].metric("Current price", f"₹{pick['current_price']:,.2f}")
-        perf = pick.get("performance", {})
         for col, key in zip(cols[3:6], ("1w", "1m", "6m")):
             if key in perf:
                 col.metric(key, f"{perf[key]['change_pct']:+.1f}%")
@@ -587,6 +855,34 @@ def render_tier_result(tier: str, result: dict, multi_tier: bool):
         st.caption(result["summary"])
 
 
+def render_ticker_strip(results_by_tier: dict):
+    """A live watchlist ribbon — symbol, real current price, real % change
+    — for every distinct symbol shortlisted in this run. Reuses the same
+    cached_stats() call every stock section already makes, so this adds
+    no extra network load beyond what's already fetched on expand."""
+    symbols = []
+    for result in results_by_tier.values():
+        for pick in result.get("shortlist", []):
+            if pick["symbol"] not in symbols:
+                symbols.append(pick["symbol"])
+    if not symbols:
+        return
+
+    chips = []
+    for sym in symbols:
+        try:
+            stats = cached_stats(sym)
+            price = f"₹{stats['current_price']:,.2f}"
+            pct = stats.get("1w", {}).get("change_pct")
+        except Exception:
+            price, pct = "—", None
+        chips.append(
+            f"<div class='ticker-chip'><span class='ticker-symbol'>{sym}</span>"
+            f"<span class='ticker-price'>{price}</span>{_pct_span(pct)}</div>"
+        )
+    st.markdown(f"<div class='ticker-strip'>{''.join(chips)}</div>", unsafe_allow_html=True)
+
+
 def render_swing_tab():
     runs = list_runs()
     if not runs:
@@ -597,6 +893,15 @@ def render_swing_tab():
     selected = st.selectbox("Run date", labels, index=0, key="swing_run_select")
     data = load_run(runs[labels.index(selected)])
 
+    # Back-compat: older runs saved a single "result", newer ones save
+    # "results_by_tier" (one shortlist per selected risk appetite).
+    results_by_tier = data.get("results_by_tier")
+    if not results_by_tier:
+        legacy = data.get("result")
+        results_by_tier = {"moderate": legacy} if legacy else {}
+
+    render_ticker_strip(results_by_tier)
+
     mkt = data.get("market_context", {})
     if mkt:
         st.caption(
@@ -606,13 +911,6 @@ def render_swing_tab():
         )
 
     render_glossary()
-
-    # Back-compat: older runs saved a single "result", newer ones save
-    # "results_by_tier" (one shortlist per selected risk appetite).
-    results_by_tier = data.get("results_by_tier")
-    if not results_by_tier:
-        legacy = data.get("result")
-        results_by_tier = {"moderate": legacy} if legacy else {}
 
     st.subheader("Shortlist")
     if not results_by_tier:
@@ -658,14 +956,17 @@ def render_intraday_tab():
         with st.container(border=True):
             conv = p.get("conviction", "?")
             conv_color = COLOR_GOOD if conv == "HIGH" else COLOR_MUTED
-            dir_color = {"bullish": COLOR_BLUE, "bearish": COLOR_CRITICAL}.get(p.get("direction"), COLOR_MUTED)
+            dir_color = {"bullish": COLOR_GOOD, "bearish": COLOR_CRITICAL}.get(p.get("direction"), COLOR_MUTED)
             conv_icon = CONVICTION_ICON.get(conv, "")
             conv_text = f"{conv_icon} {conv} conviction".strip()
             badges = (
                 f"{_badge(conv_text, conv_color)} "
                 f"{_badge(p.get('direction', '?'), dir_color)}"
             )
-            st.markdown(f"### {p['symbol']}  &nbsp; {badges}", unsafe_allow_html=True)
+            st.markdown(
+                f"<span class='ticket-symbol'>{p['symbol']}</span>&nbsp;&nbsp;{badges}",
+                unsafe_allow_html=True,
+            )
             st.caption(p.get("conviction_note", ""))
             if p.get("narrative"):
                 st.write(p["narrative"])
@@ -686,7 +987,17 @@ def render_intraday_tab():
 
 def main():
     st.set_page_config(page_title="AI Equity Analyst", page_icon="📈", layout="wide")
-    st.title("📈 AI Equity Analyst")
+    inject_terminal_css()
+
+    title_col, status_col = st.columns([4, 1])
+    with title_col:
+        st.markdown(
+            "<span style='font-family:\"JetBrains Mono\",monospace;font-size:1.7rem;"
+            "font-weight:700;letter-spacing:0.01em'>📈 AI EQUITY ANALYST</span>",
+            unsafe_allow_html=True,
+        )
+    with status_col:
+        st.markdown(f"<div style='text-align:right;padding-top:10px'>{market_status_html()}</div>", unsafe_allow_html=True)
     st.caption(
         "⚠️ Not investment advice — AI-generated analysis for informational purposes "
         "only. Do your own research and consult a SEBI-registered advisor before investing."

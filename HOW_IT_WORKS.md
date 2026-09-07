@@ -401,8 +401,10 @@ has no ability to change the score, rank, or conviction already set in
 Step 4 — it can only explain what's already been decided.
 
 ### Step 7 — Send and save
-The picks are sent to Telegram and saved to
-`output/intraday_scan_DATE_TIME.json`.
+The picks are sent to Telegram, written into a new dated sheet in
+`output/intraday_tracker.xlsx` (`alerts/intraday_excel_report.py` — same
+one-sheet-per-date rule as the swing workbook, a same-day re-run replaces
+that day's sheet), and saved to `output/intraday_scan_DATE_TIME.json`.
 
 ### Optional Step 8 — End of day, the Scorekeeper (`intraday_backtest.py`) — **1 AI call**
 Run separately after market close. Refetches real end-of-day price action
@@ -416,14 +418,18 @@ language, just facts.
 ## Part 3C — The standalone price tracker (`tracker/price_tracker.py`)
 
 This one isn't part of either pipeline — it's a maintenance tool you run
-whenever you want to check how *past* swing picks have actually performed.
-Zero AI: it's a real price lookup and a subtraction, nothing more.
+whenever you want to check how *past* picks have actually performed, swing
+or intraday. Zero AI: it's a real price lookup and a subtraction, nothing
+more.
 
-### Step 1 — Find every table in every sheet
-It opens `output/portfolio_tracker.xlsx` and scans every sheet (every past
-run date) for tables — recognised by a header row whose first cell is
-literally `"Symbol"`. Both tables `excel_report.py` writes (Selected
-Stocks, Top N Watchlist) match this, so both get tracked.
+### Step 1 — Find every table in every sheet, in both workbooks
+It opens **both** `output/portfolio_tracker.xlsx` (swing, written by
+`excel_report.py`) and `output/intraday_tracker.xlsx` (intraday, written
+by `intraday_excel_report.py`) and scans every sheet in each for tables —
+recognised by a header row whose first cell is literally `"Symbol"`. Every
+table matching that shape gets tracked, regardless of which workbook or
+which of the two writer modules produced it — `_find_tables()` doesn't
+know or care which pipeline a sheet came from.
 
 ### Step 2 — Work out what to compare against
 For each table, it looks at the *rightmost* column in that table's header
@@ -434,16 +440,23 @@ the most recent date-named column a *previous* run of the tracker added
 like `"Tier(s)"` or `"Description"` when looking.
 
 ### Step 3 — Fetch real current prices, once per symbol
-For every distinct symbol across every sheet, it fetches one real current
-price via Yahoo Finance and caches it — so a stock you picked on five
-different days only costs one real network call this run, not five.
+For every distinct symbol across every sheet *in both workbooks*, it
+fetches one real current price via Yahoo Finance and caches it — so a
+stock that shows up in five different sheets (or in both the swing and
+intraday workbook) only costs one real network call this run, not five.
 
 ### Step 4 — Append the new column
 For each table, it adds one new column, headered with today's date, and
 writes each stock's real current price plus its % change vs. the
-checkpoint found in Step 2 — e.g. `₹1,325.50 (+2.3%)`. If you run the
-tracker twice on the same day, it overwrites that day's column in place
-rather than adding a duplicate one.
+checkpoint found in Step 2 — e.g. `₹1,325.50 (+2.3%)`. It never overwrites
+an existing column, including on a same-day re-run: the first run of the
+day gets a clean date-only header (`2026-09-01`); any re-run after that
+gets a second column headered with the *actual* date and time it ran
+(`2026-09-01 14:32:07`), not a bare counter. An earlier version overwrote
+a same-day column in place; that trusted a date-string match as proof it
+was a harmless re-run, which turned out not to hold in practice and
+silently destroyed real tracked history — so this tool no longer deletes
+anything, full stop.
 
 ### A worked example
 Say a sheet from 3 weeks ago has `HCLTECH` in its Selected Stocks table,

@@ -37,18 +37,25 @@ def _chunk(text: str, max_len: int = MAX_LEN) -> list:
     return chunks
 
 
-def send(text: str):
+def send(text: str) -> bool:
+    """Never raises — a failed alert should never break the pipeline that's
+    sending it. Returns True only if every chunk was actually delivered to
+    Telegram; False if Telegram isn't configured (nothing was delivered) or
+    a real send attempt failed — callers that need to know whether it
+    genuinely reached Telegram (e.g. a standalone "send now" button) should
+    check this return value rather than assume success."""
     token = settings.telegram_token
     chat_id = settings.telegram_chat_id
 
     if not token or not chat_id:
         print("\n[telegram] (not configured — showing here instead)\n")
         print(text)
-        return
+        return False
 
     import requests
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     chunks = _chunk(text)
+    all_delivered = True
     for i, chunk in enumerate(chunks, 1):
         part = chunk if len(chunks) == 1 else f"({i}/{len(chunks)})\n\n{chunk}"
         try:
@@ -62,6 +69,9 @@ def send(text: str):
             else:
                 print(f"[telegram] failed ({resp.status_code}): {resp.text}")
                 print(part)
+                all_delivered = False
         except Exception as e:  # noqa: BLE001
             print(f"[telegram] error: {e}")
             print(part)
+            all_delivered = False
+    return all_delivered

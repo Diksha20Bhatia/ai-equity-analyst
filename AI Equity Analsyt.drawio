@@ -1,0 +1,358 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="A5V_p2zvZ5U-oFRrPrmt">
+    <mxGraphModel dx="2143" dy="1162" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title1" parent="1" style="text;html=1;fontSize=22;fontStyle=1;align=left;verticalAlign=middle;" value="AI Equity Analyst - System Architecture" vertex="1">
+          <mxGeometry height="35" width="900" x="100" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle1" parent="1" style="text;html=1;fontSize=12;fontColor=#666666;fontStyle=2;align=left;verticalAlign=middle;" value="10 core agents (Scout, Analyst, Chart Reader, Skeptic, News Reader, Decision Manager, Day Trader, Data Sentinel, Narrator, Scorekeeper) + 2 optional Bodhi agents (Risk Analyst, Contrarian)" vertex="1">
+          <mxGeometry height="25" width="1000" x="100" y="55" as="geometry" />
+        </mxCell>
+        <mxCell id="src_yahoo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" value="Yahoo Finance&#xa;prices + fundamentals (plain API)" vertex="1">
+          <mxGeometry height="50" width="190" x="160" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="src_nse" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" value="NSE Archives&#xa;official index constituent list (plain API)" vertex="1">
+          <mxGeometry height="50" width="190" x="380" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="src_news" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" value="Google News&#xa;real headlines (plain API)" vertex="1">
+          <mxGeometry height="50" width="190" x="600" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="daily_container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=12;spacingTop=10;fontSize=13;fontStyle=1;" value="DAILY DEEP SCAN  -  run.py, once a day  -  about 2 AI calls total" vertex="1">
+          <mxGeometry height="400" width="700" x="100" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="n_scout" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="1. Scout (Research Agent) - scans every stock, flags the ~10 acting unusually today" vertex="1">
+          <mxGeometry height="55" width="620" x="140" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="n_analyst" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" value="2. Analyst (Fundamental Agent) - is the business financially healthy?" vertex="1">
+          <mxGeometry height="65" width="195" x="140" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="n_chart" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" value="3. Chart Reader (Technical Agent) - trend and momentum" vertex="1">
+          <mxGeometry height="65" width="195" x="350" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="n_skeptic" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" value="4. Skeptic (Risk Agent) - how risky / volatile has it been?" vertex="1">
+          <mxGeometry height="65" width="200" x="560" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="n_newsreader" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" value="5. News Reader - reads real headlines, judges good or bad news   |   AI CALL 1" vertex="1">
+          <mxGeometry height="55" width="620" x="140" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="n_decision" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" value="6. Decision Manager - weighs everything above, writes the final pick with reasons   |   AI CALL 2" vertex="1">
+          <mxGeometry height="55" width="620" x="140" y="455" as="geometry" />
+        </mxCell>
+        <mxCell id="n_shortlist" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="Shortlist: 2-3 stocks, with reasoning shown" vertex="1">
+          <mxGeometry height="45" width="620" x="140" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="live_container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;align=left;spacingLeft=12;spacingTop=10;fontSize=13;fontStyle=1;" value="LIVE INTRADAY SCANNER  -  intraday_run.py, market hours only  -  about 1 AI call" vertex="1">
+          <mxGeometry height="400" width="700" x="850" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="n_sentinel" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="8. Data Sentinel - catches broken / fake-looking price data before it&#39;s trusted" vertex="1">
+          <mxGeometry height="55" width="620" x="890" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="n_daytrader" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" value="7. Day Trader (Intraday Agent) - mechanically checks for a real breakout happening right now" vertex="1">
+          <mxGeometry height="55" width="620" x="890" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="n_narrator" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" value="9. Narrator - plain-English reason for each top pick   |   AI CALL" vertex="1">
+          <mxGeometry height="55" width="620" x="890" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="n_scorekeeper" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontSize=12;" value="10. Scorekeeper (optional) - end-of-day report card on how today&#39;s picks actually did" vertex="1">
+          <mxGeometry height="55" width="620" x="890" y="430" as="geometry" />
+        </mxCell>
+        <mxCell id="n_livealerts" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="Live alerts: breakout picks + plain-English reason" vertex="1">
+          <mxGeometry height="45" width="620" x="890" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="gemini" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" value="Google Gemini - the one paid, reasoning model. Powers every AI CALL box (blue)" vertex="1">
+          <mxGeometry height="130" width="280" x="1580" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="langsmith" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;fontSize=11;" value="LangSmith (optional) - logs every AI call for later audit" vertex="1">
+          <mxGeometry height="70" width="280" x="1580" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp_note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#999999;fontSize=11;align=left;verticalAlign=top;spacingLeft=6;spacingTop=6;" value="MCP tools actually used: tradingview-mcp pushes picks to a real TradingView watchlist locally, no login or API needed. bodhi-deep-research is used internally by Bodhi&#39;s own Risk Analyst Agent. Everything else here (Yahoo Finance, Google News, NSE, Gemini, Telegram, Excel, LangSmith) is a plain API or library call, not MCP." vertex="1">
+          <mxGeometry height="190" width="280" x="1580" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="bodhi_container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#9673a6;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=10;fontSize=13;fontStyle=1;fontColor=#9673a6;" value="BODHI GATE (optional)  -  separate platform  -  gates the shortlist before it goes out" vertex="1">
+          <mxGeometry height="230" width="700" x="100" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="n_riskanalyst" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#9673a6;dashed=1;fontSize=12;" value="11. Risk Analyst Agent - live web research on each pick&#39;s real-world risk" vertex="1">
+          <mxGeometry height="65" width="620" x="140" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="n_contrarian" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#9673a6;dashed=1;fontSize=12;" value="12. Contrarian Agent - red-team review, forces a real second opinion, not a rubber stamp" vertex="1">
+          <mxGeometry height="65" width="620" x="140" y="790" as="geometry" />
+        </mxCell>
+        <mxCell id="out_telegram" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" value="Telegram - every pick alerted, verdict shown inline when available" vertex="1">
+          <mxGeometry height="70" width="220" x="160" y="920" as="geometry" />
+        </mxCell>
+        <mxCell id="out_tradingview" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" value="TradingView (local) - via tradingview-mcp, verdict-gated watchlist" vertex="1">
+          <mxGeometry height="70" width="220" x="420" y="920" as="geometry" />
+        </mxCell>
+        <mxCell id="out_excel" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" value="Excel Tracker - portfolio_tracker.xlsx, logs every pick and verdict" vertex="1">
+          <mxGeometry height="70" width="220" x="680" y="920" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;verticalAlign=top;align=left;spacingLeft=12;spacingTop=10;fontSize=13;fontStyle=1;" value="Legend" vertex="1">
+          <mxGeometry height="110" width="950" x="100" y="1020" as="geometry" />
+        </mxCell>
+        <mxCell id="sw_gray" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" value="" vertex="1">
+          <mxGeometry height="18" width="18" x="130" y="1060" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_gray" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=middle;" value="Code only - plain math, no AI, no cost" vertex="1">
+          <mxGeometry height="30" width="200" x="155" y="1054" as="geometry" />
+        </mxCell>
+        <mxCell id="sw_blue" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="" vertex="1">
+          <mxGeometry height="18" width="18" x="370" y="1060" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_blue" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=middle;" value="AI call (Google Gemini)" vertex="1">
+          <mxGeometry height="30" width="200" x="395" y="1054" as="geometry" />
+        </mxCell>
+        <mxCell id="sw_purple" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#9673a6;dashed=1;" value="" vertex="1">
+          <mxGeometry height="18" width="18" x="600" y="1060" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_purple" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=middle;" value="Optional - Bodhi gate" vertex="1">
+          <mxGeometry height="30" width="200" x="625" y="1054" as="geometry" />
+        </mxCell>
+        <mxCell id="sw_green" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" value="" vertex="1">
+          <mxGeometry height="18" width="18" x="820" y="1060" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_green" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=middle;" value="Output / deliverable" vertex="1">
+          <mxGeometry height="30" width="190" x="845" y="1054" as="geometry" />
+        </mxCell>
+        <mxCell id="lbl_lines" parent="1" style="text;html=1;fontSize=11;fontStyle=2;fontColor=#666666;align=left;verticalAlign=middle;" value="Lines: solid = always happens.  Dashed = AI call (blue) or optional Bodhi / audit path (purple / gray)." vertex="1">
+          <mxGeometry height="25" width="800" x="130" y="1090" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="src_yahoo" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_scout">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="255" y="184" />
+              <mxPoint x="450" y="184" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="src_yahoo" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_sentinel" value="5-min bars">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="255" y="170" />
+              <mxPoint x="1200" y="170" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="src_nse" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_scout" value="index list">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="475" y="184" />
+              <mxPoint x="450" y="184" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="src_news" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_newsreader" value="headlines">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="695" y="184" />
+              <mxPoint x="790" y="184" />
+              <mxPoint x="790" y="408" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="n_scout" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_analyst" value="~10 flagged stocks">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="124" y="248" />
+              <mxPoint x="124" y="328" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="n_scout" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_chart">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="n_scout" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_skeptic">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="776" y="248" />
+              <mxPoint x="776" y="328" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="n_analyst" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_newsreader">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="124" y="328" />
+              <mxPoint x="124" y="408" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="n_chart" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_newsreader">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="n_skeptic" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_newsreader">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="776" y="328" />
+              <mxPoint x="776" y="408" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="n_newsreader" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_decision">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="776" y="408" />
+              <mxPoint x="776" y="483" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="n_decision" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_shortlist">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="776" y="483" />
+              <mxPoint x="776" y="553" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="n_sentinel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_daytrader" value="clean data">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1526" y="248" />
+              <mxPoint x="1526" y="318" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="n_daytrader" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_narrator" value="breakout confirmed">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1526" y="318" />
+              <mxPoint x="1526" y="388" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="n_narrator" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_livealerts">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1539" y="388" />
+              <mxPoint x="1539" y="523" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="n_livealerts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_telegram" value="instant alert">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1200" y="885" />
+              <mxPoint x="270" y="885" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e17" edge="1" parent="1" source="n_livealerts" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#999999;fontSize=10;fontColor=#666666;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_scorekeeper" value="end of day (optional)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1526" y="523" />
+              <mxPoint x="1526" y="458" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="n_scorekeeper" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#999999;fontSize=10;fontColor=#666666;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_excel" value="report card">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="790" y="458" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e19" edge="1" parent="1" source="gemini" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#6c8ebf;fontSize=10;fontColor=#6c8ebf;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_newsreader" value="AI call">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1551" y="415" />
+              <mxPoint x="1551" y="561" />
+              <mxPoint x="825" y="561" />
+              <mxPoint x="825" y="408" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e20" edge="1" parent="1" source="gemini" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#6c8ebf;fontSize=10;fontColor=#6c8ebf;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_decision" value="AI call">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1564" y="415" />
+              <mxPoint x="1564" y="575" />
+              <mxPoint x="825" y="575" />
+              <mxPoint x="825" y="483" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e21" edge="1" parent="1" source="gemini" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#6c8ebf;fontSize=10;fontColor=#6c8ebf;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_narrator" value="AI call">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1551" y="415" />
+              <mxPoint x="1551" y="388" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e22" edge="1" parent="1" source="gemini" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#999999;fontSize=10;fontColor=#666666;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="langsmith" value="optional logging">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1876" y="415" />
+              <mxPoint x="1876" y="535" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e23" edge="1" parent="1" source="n_shortlist" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_telegram" value="always">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="124" y="553" />
+              <mxPoint x="124" y="955" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e24" edge="1" parent="1" source="n_shortlist" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_excel" value="always">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="790" y="553" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e25" edge="1" parent="1" source="n_shortlist" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=10;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_tradingview" value="shortlist">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="776" y="553" />
+              <mxPoint x="776" y="899" />
+              <mxPoint x="530" y="899" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e26" edge="1" parent="1" source="n_shortlist" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#9673a6;fontSize=10;fontColor=#9673a6;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_riskanalyst" value="if Bodhi on">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e27" edge="1" parent="1" source="n_riskanalyst" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#9673a6;fontSize=10;fontColor=#9673a6;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="n_contrarian" value="challenges">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="776" y="733" />
+              <mxPoint x="776" y="823" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e28" edge="1" parent="1" source="n_contrarian" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#9673a6;fontSize=10;fontColor=#9673a6;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_telegram" value="+ verdict">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="871" />
+              <mxPoint x="270" y="871" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e29" edge="1" parent="1" source="n_contrarian" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#9673a6;fontSize=10;fontColor=#9673a6;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_tradingview" value="verdict != avoid">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="899" />
+              <mxPoint x="530" y="899" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e30" edge="1" parent="1" source="n_contrarian" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#9673a6;fontSize=10;fontColor=#9673a6;libavoidRouting=1;orthogonalLoop=1;jettySize=auto;" target="out_excel" value="verdict logged">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="790" y="823" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

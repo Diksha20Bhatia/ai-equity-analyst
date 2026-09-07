@@ -42,7 +42,7 @@ from data.intraday_data import get_intraday_bundles, bars_to_records
 from agents.intraday_agent import IntradayAgent
 from agents.intraday_quality_agent import IntradayQualityAgent
 from agents.intraday_narrator_agent import IntradayNarratorAgent
-from alerts import telegram_alert
+from alerts import telegram_alert, intraday_excel_report
 
 CONVICTION_EMOJI = {"HIGH": "\U0001F525", "LOW": "\U0001F440"}  # fire / eyes
 
@@ -127,6 +127,7 @@ def main():
     alert = format_intraday_alert(top)
     banner("Final output")
     telegram_alert.send(alert)
+    intraday_excel_report.write_run(top)
 
     out_path = f"output/intraday_scan_{dt.date.today().isoformat()}_{dt.datetime.now().strftime('%H%M')}.json"
     with open(out_path, "w") as fp:

@@ -279,11 +279,15 @@ ai-equity-analyst/
 ├── alerts/
 │   ├── telegram_alert.py          ← sends the shortlist to Telegram (or prints it); splits long alerts
 │   ├── tradingview_watchlist.py   ← optional: pushes shortlisted symbols to your real TradingView watchlist
-│   └── excel_report.py            ← writes each run into output/portfolio_tracker.xlsx, one sheet per date
+│   ├── excel_report.py            ← writes each swing run into output/portfolio_tracker.xlsx, one sheet per date
+│   ├── intraday_excel_report.py   ← writes each intraday scan into output/intraday_tracker.xlsx, one sheet per date
+│   ├── trigger_telegram.py        ← standalone: re-send the latest saved shortlist to Telegram on demand
+│   └── trigger_tradingview.py     ← standalone: re-push the latest saved shortlist to TradingView on demand
 │
 ├── tracker/
 │   └── price_tracker.py           ← standalone tool, separate from agents/ — appends a real dated price
-│                                     column to every past sheet in portfolio_tracker.xlsx, 0 AI calls
+│                                     column to every past sheet in BOTH portfolio_tracker.xlsx and
+│                                     intraday_tracker.xlsx, 0 AI calls
 │
 ├── integrations/
 │   ├── bodhi_client.py            ← optional: generic start-run/poll/extract REST client for Bodhi
@@ -582,21 +586,34 @@ sheet has two tables:
 
 This is plain code, zero AI, and always on — no toggle needed.
 
+**The intraday scanner has the exact same setup, in its own file.** Every
+`intraday_run.py` scan writes into `output/intraday_tracker.xlsx` (via
+`alerts/intraday_excel_report.py`) — a separate workbook from the swing
+one, since intraday picks (direction, entry, stop, target, pattern) don't
+share a shape with swing picks. Same rule: one sheet per date, a same-day
+re-run replaces that day's sheet.
+
 **To see how those past picks have actually performed**, run the
 tracker separately (`tracker/price_tracker.py` — deliberately its own
-folder, apart from `agents/`, since it isn't part of the daily pipeline):
+folder, apart from `agents/`, since it isn't part of the daily pipeline).
+One run covers **both** workbooks:
 
 ```bash
 uv run python tracker/price_tracker.py     # or the dashboard's 📒 button
 ```
 
-It walks *every* sheet in the workbook and appends one new column, dated
-today, to every table it finds: each stock's real current price, plus its
-% change vs. whichever column was the most recent price checkpoint for
-that stock — the original listing price the first time you run the
-tracker, or the last tracking column a previous run added, every time
-after that. Run it as often as you like; each distinct symbol's price is
-only fetched once per run, no matter how many sheets it appears in.
+It walks *every* sheet in *both* `portfolio_tracker.xlsx` and
+`intraday_tracker.xlsx` and appends one new column, dated today, to every
+table it finds: each stock's real current price, plus its % change vs.
+whichever column was the most recent price checkpoint for that stock —
+the original listing price the first time you run the tracker, or the
+last tracking column a previous run added, every time after that. Run it
+as often as you like; each distinct symbol's price is only fetched once
+per run, no matter how many sheets or workbooks it appears in. It never
+overwrites a column, even on a same-day re-run — the first run of the day
+gets a clean `2026-09-01` column, and any re-run after that gets the real
+`2026-09-01 14:32:07` it actually ran at, rather than risking any tracked
+history.
 
 ---
 

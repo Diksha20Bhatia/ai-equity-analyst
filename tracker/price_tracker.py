@@ -7,9 +7,11 @@ check how past picks have actually performed.
 
     uv run python tracker/price_tracker.py
 
-Walks every sheet in output/portfolio_tracker.xlsx (one sheet per swing
-run date, written by alerts/excel_report.py) and, for every table it
-finds (Selected Stocks, Top N Watchlist), appends ONE new column dated
+Walks every sheet in BOTH output/portfolio_tracker.xlsx (swing picks,
+written by alerts/excel_report.py) and output/intraday_tracker.xlsx
+(intraday picks, written by alerts/intraday_excel_report.py) — same
+button, same tool, both workbooks. For every table it finds (anything
+with a header row starting "Symbol"), it appends ONE new column dated
 with today's date: each stock's real current price, plus its % change
 vs. whichever column was the most recent price checkpoint for that table
 — either the original "Current Price" column (first time this tool runs
@@ -18,8 +20,17 @@ added (every time after that).
 
 Zero AI — this is a real price lookup and a subtraction, nothing more.
 Every distinct symbol's price is fetched once per run and reused across
-every sheet/table it appears in, so a stock picked on five different
-days only costs one real network call, not five.
+BOTH workbooks and every sheet/table in each, so a stock that shows up in
+five different sheets only costs one real network call, not five.
+
+Always appends — never overwrites a column, including on a same-day
+re-run (the first run of the day gets a clean "2026-09-01" column; any
+same-day re-run after that gets the actual "2026-09-01 14:32:07" it ran
+at, instead of overwriting the earlier one). An earlier version overwrote
+same-day columns in place, trusting a date-string match as proof it was a
+safe re-run; that assumption broke in practice and
+silently destroyed real tracked history, so this tool no longer deletes
+anything, ever.
 """
 
 import datetime as dt
@@ -32,8 +43,11 @@ sys.path.insert(0, str(ROOT))
 
 from data.market_data import get_market_stats  # noqa: E402
 
-WORKBOOK_PATH = ROOT / "output" / "portfolio_tracker.xlsx"
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+OUTPUT_DIR = ROOT / "output"
+WORKBOOK_PATHS = [OUTPUT_DIR / "portfolio_tracker.xlsx", OUTPUT_DIR / "intraday_tracker.xlsx"]
+# Back-compat: some callers/tests still reach for the single-file name.
+WORKBOOK_PATH = WORKBOOK_PATHS[0]
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")  # prefix match — see _unique_header_label
 _PRICE_RE = re.compile(r"₹?([\d,]+\.?\d*)")
 
 
@@ -74,6 +88,34 @@ def _reference_price_col(ws, table: dict):
     return None
 
 
+def _unique_header_label(ws, header_row: int, last_col: int, today: str) -> str:
+    """`today` (just the date) for this table's first run of the day —
+    keeps the common case (one run/day) reading clean. If this table
+    already has a column labeled today, this is a same-day re-run: label
+    the new column with the actual date+time of THIS run instead of
+    overwriting the earlier one — more useful than a bare counter for
+    telling same-day re-runs apart, and still guaranteed unique. A
+    previous version overwrote same-day columns in place, trusting a
+    date-string match as proof it was a harmless re-run; that assumption
+    broke in practice and silently destroyed two real days of tracked
+    data. This tool's only job is a historical record, so it now never
+    deletes a column, full stop — worst case is a redundant same-day
+    column, never a lost one."""
+    existing = {
+        str(ws.cell(row=header_row, column=c).value or "")
+        for c in range(1, last_col + 1)
+    }
+    if today not in existing:
+        return today
+    label = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    n = 2
+    base = label
+    while label in existing:
+        label = f"{base} ({n})"
+        n += 1
+    return label
+
+
 def _parse_price(cell_value):
     if isinstance(cell_value, (int, float)):
         return float(cell_value)
@@ -94,41 +136,32 @@ def _real_price(symbol: str, cache: dict):
     return cache[symbol]
 
 
-def run():
-    if not WORKBOOK_PATH.exists():
-        raise RuntimeError(
-            f"No workbook found at {WORKBOOK_PATH} — run run.py at least once first "
-            "so there's something to track."
-        )
-
+def _track_workbook(path: Path, today: str, price_cache: dict) -> tuple:
+    """Appends today's tracking column to every table in every sheet of
+    ONE workbook. Returns (updated_cells, tables_seen) for that file."""
     from openpyxl import load_workbook
     from openpyxl.styles import Font, PatternFill
 
-    wb = load_workbook(WORKBOOK_PATH)
-    today = dt.date.today().isoformat()
+    wb = load_workbook(path)
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="0CA30C")  # green, to visually mark tracker-added columns
 
-    price_cache = {}
     updated_cells = 0
     tables_seen = 0
 
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         for table in _find_tables(ws):
-            last_header = ws.cell(row=table["header_row"], column=table["last_col"]).value
-            if last_header == today:
-                # Already tracked today (a second run this same day) —
-                # overwrite that column in place instead of duplicating it,
-                # comparing against whatever was the checkpoint BEFORE it.
-                target_col = table["last_col"]
-                ref_col = _reference_price_col(ws, {**table, "last_col": target_col - 1})
-            else:
-                target_col = table["last_col"] + 1
-                ref_col = _reference_price_col(ws, table)
+            # Always append — never overwrite an existing column. See
+            # _unique_header_label's docstring for why: overwriting a
+            # same-day column used to be "safe" by design, until it
+            # silently destroyed two real days of tracked data.
+            target_col = table["last_col"] + 1
+            ref_col = _reference_price_col(ws, table)
+            label = _unique_header_label(ws, table["header_row"], table["last_col"], today)
             tables_seen += 1
 
-            header_cell = ws.cell(row=table["header_row"], column=target_col, value=today)
+            header_cell = ws.cell(row=table["header_row"], column=target_col, value=label)
             header_cell.font, header_cell.fill = header_font, header_fill
 
             for row in range(table["data_start"], table["data_end"] + 1):
@@ -148,9 +181,26 @@ def run():
                     ws.cell(row=row, column=target_col, value=f"₹{current:,.2f}")
                 updated_cells += 1
 
-    wb.save(WORKBOOK_PATH)
+    wb.save(path)
     print(f"[tracker] {today}: updated {updated_cells} cells across "
-          f"{tables_seen} table(s) in {len(wb.sheetnames)} sheet(s) -> {WORKBOOK_PATH}")
+          f"{tables_seen} table(s) in {len(wb.sheetnames)} sheet(s) -> {path}")
+    return updated_cells, tables_seen
+
+
+def run():
+    existing = [p for p in WORKBOOK_PATHS if p.exists()]
+    if not existing:
+        raise RuntimeError(
+            f"No workbook found at {WORKBOOK_PATHS[0]} or {WORKBOOK_PATHS[1]} — "
+            "run run.py or intraday_run.py at least once first so there's something to track."
+        )
+    for missing in set(WORKBOOK_PATHS) - set(existing):
+        print(f"[tracker] {missing.name} doesn't exist yet — skipping it")
+
+    today = dt.date.today().isoformat()
+    price_cache = {}  # shared across both workbooks — one real fetch per symbol, not per file
+    for path in existing:
+        _track_workbook(path, today, price_cache)
 
 
 if __name__ == "__main__":

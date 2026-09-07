@@ -23,16 +23,23 @@ import subprocess
 from config import settings
 
 
-def add_symbols(symbols: list) -> None:
+def add_symbols(symbols: list) -> dict | None:
     """
     symbols: real NSE ticker symbols, e.g. ["RELIANCE", "TCS"]. Converted to
     TradingView's EXCHANGE:SYMBOL format and bulk-added to whichever
     watchlist is currently open in TradingView Desktop.
+
+    Never raises — a missing watchlist push should never take down the rest
+    of a run. Returns None for a no-op (disabled, or no symbols given) or a
+    real attempt's result: {"added": N, "failed": N, "results": [...]}.
+    Callers that need to know whether it genuinely worked (e.g. a
+    standalone "push now" button) should check "added"/"failed" rather
+    than assume success just because this didn't raise.
     """
     if not settings.tradingview_watchlist_enabled:
-        return
+        return None
     if not symbols:
-        return
+        return None
 
     tv_symbols = [f"NSE:{s}" for s in dict.fromkeys(symbols)]  # de-dupe, keep order
 
@@ -44,21 +51,21 @@ def add_symbols(symbols: list) -> None:
     except FileNotFoundError:
         print("[tradingview] skipped: 'node' not found, or tradingview-mcp isn't cloned "
               f"at {settings.tradingview_cli_path}")
-        return
+        return {"added": 0, "failed": len(tv_symbols), "results": []}
     except subprocess.TimeoutExpired:
         print("[tradingview] skipped: timed out — is TradingView Desktop running "
               "with the debug port enabled?")
-        return
+        return {"added": 0, "failed": len(tv_symbols), "results": []}
 
     if proc.returncode != 0:
         print(f"[tradingview] failed: {proc.stderr.strip() or proc.stdout.strip()}")
-        return
+        return {"added": 0, "failed": len(tv_symbols), "results": []}
 
     try:
         result = json.loads(proc.stdout)
     except json.JSONDecodeError:
         print(f"[tradingview] unexpected output: {proc.stdout.strip()}")
-        return
+        return {"added": 0, "failed": len(tv_symbols), "results": []}
 
     added = result.get("added", 0)
     failed = result.get("failed", 0)
@@ -68,3 +75,5 @@ def add_symbols(symbols: list) -> None:
         for r in result.get("results", []):
             if not r.get("success"):
                 print(f"  [tradingview] {r.get('symbol')}: {r.get('error', 'not added')}")
+
+    return {"added": added, "failed": failed, "results": result.get("results", [])}
