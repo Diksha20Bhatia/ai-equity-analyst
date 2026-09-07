@@ -22,17 +22,19 @@ It walks through the whole morning routine, in order:
   8. Store today's scores into memory. Then, if BODHI_ENABLED=true, send
      today's real shortlist to a Bodhi workflow for risk verification and
      wait for its answer (see integrations/bodhi_risk_insights.py) — its
-     per-symbol verdict (if it returns one) is shown inline in the
-     Telegram alert, and any symbol it flags avoid/high-risk is left out
-     of the TradingView push (Telegram still shows every pick either way).
-     Finally: send the Telegram alert, (if TRADINGVIEW_WATCHLIST_ENABLED=
-     true) push the remaining shortlisted symbols into your real
-     TradingView watchlist, and write today's results as a new dated
-     sheet in output/portfolio_tracker.xlsx — see
-     alerts/tradingview_watchlist.py and alerts/excel_report.py. If Bodhi
-     is off, unreachable, or returns no parseable verdict, nothing is
-     filtered — every symbol goes to TradingView exactly as before this
-     integration existed.
+     per-symbol verdict (if it returns one) will later gate the
+     TradingView push, and is shown inline once the Telegram alert is
+     actually sent.
+  9. Write today's results as a new dated sheet in
+     output/portfolio_tracker.xlsx (alerts/excel_report.py) — this is
+     this app's own record, written immediately, always.
+ 10. Save the shortlist as PENDING APPROVAL (alerts/approval_queue.py) —
+     Telegram and TradingView are external delivery, and this run does
+     NOT send or push anything itself. Open the dashboard's ✅ Approvals
+     tab to review the shortlist and either approve it (sends the
+     Telegram alert, and pushes to TradingView any symbol Bodhi didn't
+     flag avoid/high-risk — if Bodhi is off or found no clear verdict,
+     nothing is filtered) or reject it (nothing is sent).
 
 To see how past picks have actually performed since they were listed,
 run tracker/price_tracker.py separately — a standalone tool that appends
@@ -53,14 +55,16 @@ means anything while the market is open.
 import json
 import datetime as dt
 
+import contracts
 import observability
 from observability import traceable
-from config import settings, auth_used, client
+from config import settings
 from data import market_data, market_context
 from data.nse_universe import resolve_universe
 from memory.memory_layer import MemoryLayer
+from memory.knowledge_base import KnowledgeBase
 from profile.profile_loader import load_profile
-from alerts import telegram_alert, tradingview_watchlist, excel_report
+from alerts import excel_report, approval_queue
 from integrations import bodhi_risk_insights
 
 from agents.research_agent import ResearchAgent
@@ -79,22 +83,26 @@ def banner(text):
 
 @traceable(run_type="chain", name="AI Equity Analyst — swing run")
 def main():
+    run_id = observability.new_run("swing")
     banner("AI EQUITY ANALYST  —  daily run")
     print(f"Date        : {dt.date.today().isoformat()}")
-    print(f"Gemini login: {auth_used}  ({'connected' if client else 'NOT CONNECTED'})")
-    print(f"Model       : {settings.model}")
-    print(f"Tracing     : {'LangSmith (connected)' if observability.enabled else 'disabled (set LANGSMITH_API_KEY to enable)'}")
+    print(f"Run ID      : {run_id}  (telemetry -> output/metrics.jsonl, always on)")
+    print(f"Bodhi LLM Gateway: {'connected' if settings.bodhi_llm_gateway_token else 'NOT CONFIGURED'}")
+    print(f"Model            : {settings.bodhi_llm_model}")
+    print(f"Tracing          : {'LangSmith (connected)' if observability.enabled else 'disabled (set LANGSMITH_API_KEY to enable)'}")
 
-    if client is None:
+    if not settings.bodhi_llm_gateway_token:
         raise RuntimeError(
-            "Gemini is not configured — check GOOGLE_AUTH_MODE, GOOGLE_API_KEY, "
-            "or your Google Cloud ADC login in .env."
+            "Bodhi LLM Gateway is not configured — set BODHI_LLM_GATEWAY_TOKEN "
+            "(and BODHI_LLM_TRACE_USER_ID) in .env."
         )
 
     # 1. Load profile + memory --------------------------------------------------
     profile = load_profile(settings.profile_path)
     memory = MemoryLayer()
     print(f"Memory      : {memory.backend} backend")
+    knowledge_base = KnowledgeBase()
+    print(f"Knowledge   : {'retrieval enabled' if knowledge_base.available else 'unavailable this run'}")
 
     universe = resolve_universe(settings.universe)
     print(f"Universe    : {len(universe)} stocks ({settings.universe})")
@@ -168,6 +176,15 @@ def main():
         )
 
     # 7. Decision Agent — ONE batched AI call PER selected risk-appetite tier ---
+    # The evaluation loop, closed: before deciding anything new, the agent is
+    # shown how this system's PREVIOUS picks actually performed, measured from
+    # real tracked prices (tracker/quality_report.py). Empty string on a cold
+    # start — no history is better than a fabricated track record.
+    from tracker.quality_report import calibration_context
+    calibration = calibration_context()
+    if calibration:
+        print("  (feeding realised track record back into the decision prompt)")
+
     risk_tiers = _resolve_risk_tiers(profile)
     banner(f"STEP 5 — Decision Agent — 1 batched AI call x {len(risk_tiers)} risk tier(s)")
     decision = DecisionAgent()
@@ -176,7 +193,11 @@ def main():
         tier_profile = dict(profile)
         tier_profile["risk_appetite"] = tier
         tier_profile.pop("risk_appetites", None)
-        results_by_tier[tier] = decision.run(analyses, tier_profile, mkt, memory_deltas, top_n=settings.top_n)
+        with observability.track("agent_run", agent="Decision Agent", tier=tier):
+            results_by_tier[tier] = decision.run(
+                analyses, tier_profile, mkt, memory_deltas, top_n=settings.top_n,
+                knowledge_base=knowledge_base, calibration=calibration,
+            )
         print(f"  [{tier}] {len(results_by_tier[tier].get('shortlist', []))} pick(s)")
 
     # 8. Store memory + send the alert -------------------------------------------
@@ -186,6 +207,23 @@ def main():
     for tier, result in results_by_tier.items():
         for p in result.get("shortlist", []):
             actions_by_symbol.setdefault(p["symbol"], []).append(f"{tier}:{p.get('action', 'n/a')}")
+
+    # Index today's real research so future runs can retrieve it — every
+    # analyzed stock gets its News Reader summary indexed; a shortlisted
+    # stock also gets its bull/bear case and key risk, since that's the
+    # richer, more decision-relevant text. Best-effort, never blocks.
+    shortlist_by_symbol = {
+        p["symbol"]: p for result in results_by_tier.values() for p in result.get("shortlist", [])
+    }
+    for a in analyses:
+        pick = shortlist_by_symbol.get(a["symbol"], {})
+        knowledge_base.index_run(
+            symbol=a["symbol"], sector=a.get("sector"),
+            event_summary=a.get("event", {}).get("summary", ""),
+            bull_case=pick.get("bull_case", ""), bear_case=pick.get("bear_case", ""),
+            key_risk=pick.get("key_risk", ""),
+        )
+
     for a in analyses:
         memory.store(a["symbol"], {
             "price": a["market_stats"]["current_price"],
@@ -198,33 +236,55 @@ def main():
     banner("STEP 6 — Bodhi risk verification (optional)")
     bodhi_result = bodhi_risk_insights.verify_shortlist(results_by_tier, analyses)
 
-    alert = format_alert(results_by_tier, bodhi_result.get("verdicts"))
-    banner("STEP 7 — Final output")
-    telegram_alert.send(alert)
-    if bodhi_result["ran"]:
-        telegram_alert.send("*🧠 Bodhi Risk Insight — full report*\n\n" + bodhi_result["report"])
-
-    # TradingView only gets symbols Bodhi didn't flag as avoid/high-risk.
-    # If Bodhi didn't run (disabled, unreachable, or no verdict was found),
-    # flagged_symbols is empty and every shortlisted symbol still goes —
-    # unchanged from before this integration existed.
-    tv_symbols = [s for s in actions_by_symbol.keys() if s not in bodhi_result["flagged_symbols"]]
-    tradingview_watchlist.add_symbols(tv_symbols)
+    banner("STEP 7 — Save for review + internal record-keeping")
+    # The Excel workbook and the JSON snapshot below are this app's own
+    # record-keeping — written immediately, always. Telegram and
+    # TradingView are external delivery, and now require a human to
+    # actually release them — see alerts/approval_queue.py.
     excel_report.write_run(results_by_tier, analyses)
+    approval_queue.save_pending(results_by_tier, bodhi_result, actions_by_symbol)
 
     # Save a copy to disk for your records (drop the raw price series first —
     # it's a pandas Series, not JSON-serialisable, and the dashboard/agents
     # only needed it transiently during this run).
     for a in analyses:
         a.pop("close_series", None)
+
+    payload = {
+        "profile": profile,
+        "market_context": {k: v for k, v in mkt.items() if k != "close_series"},
+        "analyses": analyses,
+        "results_by_tier": results_by_tier,
+    }
+
+    # The swing pipeline promises a specific shape (see contracts.SWING).
+    # Checking it here means a regression that silently drops a field shows
+    # up as a loud warning on the run that caused it, rather than as a
+    # confusing KeyError in the dashboard days later.
+    violations = contracts.validate_swing_output(payload)
+    if violations:
+        print("\n⚠ CONTRACT VIOLATIONS in this run's output:")
+        for v in violations:
+            print(f"   - {v}")
+        observability.record_failure("contract_swing_output", "; ".join(violations[:10]),
+                                      violation_count=len(violations))
+    else:
+        print("\n✓ Output matches the swing pipeline contract (contracts.SWING)")
+
     out_path = f"output/analysis_{dt.date.today().isoformat()}.json"
     with open(out_path, "w") as fp:
-        json.dump(
-            {"profile": profile, "market_context": {k: v for k, v in mkt.items() if k != "close_series"},
-             "analyses": analyses, "results_by_tier": results_by_tier},
-            fp, indent=2,
-        )
-    print(f"\nSaved full analysis to {out_path}")
+        json.dump(payload, fp, indent=2)
+    print(f"Saved full analysis to {out_path}")
+
+    observability.record_metric(
+        "run_completed", kind="swing",
+        tiers=len(results_by_tier),
+        analysed=len(analyses),
+        shortlisted=len({p["symbol"] for r in results_by_tier.values()
+                          for p in r.get("shortlist", [])}),
+        contract_violations=len(violations),
+        bodhi_ran=bool(bodhi_result.get("ran")),
+    )
 
 
 def _resolve_risk_tiers(profile: dict) -> list:
@@ -248,7 +308,11 @@ TIER_LABELS = {
 CONVICTION_EMOJI = {"HIGH": "🔥", "LOW": "👀"}
 
 
-def format_alert(results_by_tier: dict, bodhi_verdicts: dict = None) -> str:
+DECISION_EMOJI = {"proceed": "✅", "blocked": "🚫", "unverified": "❔"}
+
+
+def format_alert(results_by_tier: dict, bodhi_decisions: list = None) -> str:
+    bodhi_by_symbol = {d["symbol"]: d for d in (bodhi_decisions or [])}
     lines = ["*AI Equity Analyst — Today's Shortlist*", ""]
     lines.append(
         "_🔥 HIGH CONVICTION = data lines up cleanly, worth acting on. "
@@ -300,9 +364,10 @@ def format_alert(results_by_tier: dict, bodhi_verdicts: dict = None) -> str:
             if pick.get("invalidation"):
                 lines.append(f"   What would change this view: {pick['invalidation']}")
             lines.append(f"   ⚠ Key risk: {pick.get('key_risk', '')}")
-            bodhi_v = (bodhi_verdicts or {}).get(pick["symbol"])
-            if bodhi_v:
-                lines.append(f"   🧠 Bodhi verdict: *{bodhi_v['verdict'].upper()}* — {bodhi_v['notes']}")
+            bodhi_d = bodhi_by_symbol.get(pick["symbol"])
+            if bodhi_d:
+                emoji = DECISION_EMOJI.get(bodhi_d["decision"], "")
+                lines.append(f"   🧠 Bodhi decision: {emoji} *{bodhi_d['decision'].upper()}* — {bodhi_d['reason']}")
             lines.append("")
 
         cap = result.get("capital_summary", {})

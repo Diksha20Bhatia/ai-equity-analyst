@@ -1,8 +1,9 @@
 # 🧠 AI Equity Analyst
 
 An **agentic AI** that behaves like a small equity research desk for the
-**Indian stock market** — powered by Google **Gemini**, real Yahoo Finance
-prices, and real news.
+**Indian stock market** — powered by Google **Gemini** (routed through
+Bodhi's LLM Gateway, not called directly), real Yahoo Finance prices, and
+real news.
 
 Instead of you opening a stock screener and manually checking 50–500
 companies every morning, a team of AI "specialists" does it for you and
@@ -78,7 +79,7 @@ it does that for a couple of AI calls per run, not per stock.
 ```mermaid
 flowchart TB
     subgraph External["🌐 External services (all real, mostly free)"]
-        Gemini[("Google Gemini<br/>Vertex AI or AI Studio<br/>— needs a key")]
+        Gemini[("Bodhi LLM Gateway<br/>the one AI entry point<br/>— needs a token")]
         Yahoo[("Yahoo Finance<br/>via yfinance<br/>— free, keyless")]
         GNews[("Google News RSS<br/>— free, keyless")]
         NSEArc[("NSE archives<br/>Nifty 50 / 500 lists<br/>— free, keyless")]
@@ -113,7 +114,8 @@ flowchart TB
         TVAlert["alerts/tradingview_watchlist.py<br/>— optional"]
         Excel["alerts/excel_report.py"]
         Tracker["tracker/price_tracker.py<br/>— separate, standalone tool"]
-        Bodhi["integrations/bodhi_risk_insights.py<br/>— optional, external"]
+        Bodhi["integrations/bodhi_risk_insights.py<br/>— optional, external,<br/>one Bodhi run per symbol"]
+        Approval["alerts/approval_queue.py<br/>human checkpoint"]
         Output[("output/*.json + portfolio_tracker.xlsx")]
     end
 
@@ -132,11 +134,12 @@ flowchart TB
     Narrator --> IntraRun
     Memory --> Run
     Profile --> Run
-    Run --> Bodhi -.->|real shortlist, real answer, if enabled| BodhiSvc((Bodhi))
-    Bodhi -->|verdicts gate which symbols go| TVAlert
-    Bodhi -->|per-symbol verdict shown inline| Alert
-    Run --> Alert --> TG
-    Run --> TVAlert --> TV
+    Run --> Bodhi -.->|one run per shortlisted symbol, if enabled| BodhiSvc((Bodhi))
+    Bodhi -->|per-symbol decision:<br/>proceed / blocked / unverified| Approval
+    Run --> Approval
+    Approval -->|human clicks Approve| Alert --> TG
+    Approval -->|only "proceed" symbols| TVAlert --> TV
+    Dashboard -->|✅ Approvals tab: approve / reject| Approval
     Run --> Excel --> Output
     IntraRun --> Alert
     Run --> Output --> Dashboard
@@ -147,11 +150,18 @@ flowchart TB
     Dashboard -. "upload / fill profile form" .-> Profile
 ```
 
+Nothing reaches Telegram or TradingView the moment a run finishes — every
+shortlist lands in `alerts/approval_queue.py` as **pending** first,
+Bodhi's per-symbol decisions attached, and a human has to click Approve
+(or Reject) in the dashboard before anything external is touched. See the
+worked example in the Bodhi section below.
+
 **Every connection above is either a plain, direct HTTP/SDK call, or a local,
 credential-free connection to an app already running on your own machine.**
-`requests` handles Google News/NSE/Telegram, `yfinance` handles Yahoo Finance,
-`google-genai` handles Gemini, and `langsmith` (optional) handles tracing —
-none of those are MCP. The one exception is the optional TradingView
+`requests` handles Google News/NSE/Telegram *and* every AI call (a plain
+REST call to Bodhi's LLM Gateway — see `config.call_bodhi_llm()`),
+`yfinance` handles Yahoo Finance, and `langsmith` (optional) handles
+tracing — none of those are MCP. The one exception is the optional TradingView
 watchlist push: it shells out to the [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp)
 CLI, which drives your already-logged-in TradingView Desktop app over Chrome
 DevTools Protocol on `localhost` — no TradingView credentials are ever
@@ -174,7 +184,9 @@ sequenceDiagram
     participant Event as News/Event Reader (1 AI call)
     participant Mem as Memory
     participant DA as Decision Agent (1 AI call<br/>per risk tier)
-    participant Bodhi as Bodhi (optional)
+    participant Bodhi as Bodhi (optional,<br/>one run per symbol)
+    participant Appr as approval_queue.py
+    participant You2 as You (dashboard)
     participant TG as Telegram
     participant TV as TradingView (optional)
     participant XL as portfolio_tracker.xlsx
@@ -193,12 +205,15 @@ sequenceDiagram
     Run->>DA: everything above + real market context + your profile,<br/>once per selected risk tier
     DA-->>Run: shortlist per tier — opportunity score, confidence,<br/>bull/bear case, target, ₹ split
     Run->>Mem: store today's real scores for next time
-    Run->>Bodhi: today's real shortlist, if BODHI_ENABLED
-    Bodhi-->>Run: per-symbol verdict (if parseable) + full report
-    Run->>TG: send the shortlist, with any Bodhi verdicts inline
-    Run->>TV: push symbols Bodhi did NOT flag avoid/high-risk<br/>(all of them, if Bodhi didn't run or gave no verdict)
+    Run->>Bodhi: one run per shortlisted symbol, if BODHI_ENABLED
+    Bodhi-->>Run: proceed / blocked / unverified + reason, per symbol
+    Run->>Appr: save shortlist + decisions as PENDING (nothing sent yet)
     Run->>XL: write today's dated sheet (selected + top-10 watchlist)
     Run->>You: save output/analysis_DATE.json
+    You2->>Appr: open ✅ Approvals tab, review decisions
+    You2->>Appr: click Approve
+    Appr->>TG: send the shortlist, with each symbol's Bodhi decision inline
+    Appr->>TV: push only symbols Bodhi marked "proceed"
 ```
 
 If **any** step fails — Gemini unreachable, Yahoo rate-limiting a symbol —
@@ -246,7 +261,7 @@ ai-equity-analyst/
 ├── intraday_run.py                ← runs the full INTRADAY pipeline
 ├── intraday_backtest.py            ← optional end-of-day report card for today's intraday picks
 ├── dashboard.py                     ← Streamlit UI: profile builder, browse runs, trigger a run
-├── config.py                         ← reads .env, logs in to Gemini
+├── config.py                         ← reads .env; call_bodhi_llm() is the one AI entry point every agent uses
 ├── observability.py                   ← optional LangSmith tracing (no-op if not configured)
 ├── .env.example                        ← copy this to .env and add your settings
 ├── requirements.txt                     ← the Python libraries to install
@@ -307,7 +322,7 @@ formula, every API endpoint — see **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
 
 | Source | What it provides | Used by | Key needed? |
 |---|---|---|---|
-| **Google Gemini** | News interpretation, final decision synthesis, intraday narration/gap review | `agents/*.py` (5 of the 10 agents), plus profile structuring | ✅ yes |
+| **Bodhi LLM Gateway** | News interpretation, final decision synthesis, intraday narration/gap review — every AI call in the app, routed through one governed endpoint | `agents/*.py` (5 of the 10 agents), plus profile structuring, via `config.call_bodhi_llm()` | ✅ yes |
 | **Yahoo Finance** (`yfinance`) | Real daily *and* 5-minute price/volume history, real company fundamentals, the Nifty 50 index itself | `data/market_data.py`, `data/market_context.py`, `data/intraday_data.py` | ❌ free |
 | **Google News RSS** | Real, current headlines per stock | `data/market_data.py` (fetch) → `agents/sentiment_agent.py` (interpret) | ❌ free |
 | **NSE archives** | Official Nifty 50 / Nifty 500 constituent symbol lists | `data/nse_universe.py` | ❌ free |
@@ -366,49 +381,39 @@ uv pip install -r requirements.txt      # or: pip install -r requirements.txt
 cp .env.example .env
 ```
 
-**Step 4 — Connect Gemini** (pick **one** method)
+**Step 4 — Connect the Bodhi LLM Gateway**
 
-#### Method 1 — Google AI Studio API key (easiest)
-1. Go to **https://aistudio.google.com/apikey** and create a free API key.
+Every AI call in this app — the News Reader, the Decision Agent, profile
+structuring — goes through Bodhi's LLM Gateway, an OpenAI-compatible
+endpoint. No provider SDK (`google-genai`, `openai`, ...) is called
+directly anywhere in this codebase; `config.call_bodhi_llm()` is the one
+place that happens, so the whole app's AI usage is attributable through
+Bodhi rather than a direct provider account.
+
+1. Get your API token and team identifier from your Bodhi platform access
+   (Bodhi calls the team identifier "ASPIRE TEAM NAME" — it's sent as a
+   `trace_user_id` header for usage attribution on their side).
 2. In `.env`:
    ```
-   GOOGLE_AUTH_MODE=token
-   GOOGLE_GENAI_USE_VERTEXAI=FALSE
-   GOOGLE_API_KEY=paste-your-key-here
+   BODHI_LLM_GATEWAY_URL=https://bodhi-llm-gateway.sandbox.psbodhi.live
+   BODHI_LLM_GATEWAY_TOKEN=paste-your-token-here
+   BODHI_LLM_TRACE_USER_ID=your-team-name
+   BODHI_LLM_MODEL=gemini-2.5-pro
    ```
-
-#### Method 2 — Google Cloud / Vertex AI
-1. Install the gcloud CLI, then log in:
-   ```bash
-   gcloud auth application-default login
-   ```
-2. Enable the Vertex AI API on your project (one time):
-   ```bash
-   gcloud services enable aiplatform.googleapis.com --project YOUR_PROJECT
-   ```
-3. In `.env`:
-   ```
-   GOOGLE_AUTH_MODE=adc
-   GOOGLE_GENAI_USE_VERTEXAI=TRUE
-   GOOGLE_CLOUD_PROJECT=your-project-id
-   GOOGLE_CLOUD_LOCATION=europe-west2
-   ```
-
-> `GOOGLE_AUTH_MODE=auto` tries Vertex AI first, then falls back to the API
-> key — handy if you're not sure which will work. Note: if
-> `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, the SDK routes through Vertex even in
-> token mode — set it to `FALSE` if you want the API key to actually hit
-> AI Studio instead.
+3. `BODHI_LLM_MODEL` can be any model ID Bodhi's gateway currently
+   supports — check `GET /v1/models` on the gateway URL above for the
+   live list (OpenAI, Anthropic, and Google models are all available
+   through the same endpoint).
 
 **Step 5 — Run the swing scan**
 ```bash
 uv run python run.py       # or: python run.py
 ```
 
-The header prints `Gemini login: adc (connected)` or `token (connected)`
-when it worked. If it says `NOT CONNECTED`, `run.py` stops immediately with
-the reason — fix `.env` and re-run. Market data (Yahoo Finance, Google
-News, NSE lists) needs no key at all.
+The header prints `Bodhi LLM Gateway: connected` when it worked. If it
+says `NOT CONFIGURED`, `run.py` stops immediately with the reason — fix
+`.env` and re-run. Market data (Yahoo Finance, Google News, NSE lists)
+needs no key at all.
 
 **Step 6 — Try the intraday scanner** (during market hours, 09:15–15:30 IST)
 ```bash
@@ -445,7 +450,7 @@ Opens at `http://localhost:8501`. From there you can:
 - **Browse any intraday scan** — same idea, on the "⚡ Intraday scan" tab:
   entry/stop/target levels, the mechanical read, and the Narrator's
   explanation + pattern tag for each pick.
-- **Edit `UNIVERSE` / `TOP_N`** — written straight to `.env`. Gemini/Telegram
+- **Edit `UNIVERSE` / `TOP_N`** — written straight to `.env`. Bodhi/Telegram
   credentials are intentionally **not** editable here — they're secrets,
   not day-to-day knobs, so they stay `.env`-only.
 - **Trigger a run** — separate buttons for **▶ Run swing analysis** and
@@ -621,10 +626,9 @@ history.
 
 If you have a **Bodhi** workflow (Sapient's internal multi-agent AI
 platform — a separate system from this app), every swing run can send it
-today's real shortlist — every field the Decision Agent produced:
-bull/bear case, opportunity score, target price, ₹ allocation — and use
-its answer to **gate what goes to TradingView**, before Telegram/TradingView
-are touched at all. It's off by default and never blocks a run:
+today's real shortlist for an independent review, and use its answer to
+**gate what goes to TradingView**, before Telegram/TradingView are touched
+at all. It's off by default and never blocks a run:
 
 ```bash
 BODHI_ENABLED=true
@@ -638,74 +642,273 @@ BODHI_PORTFOLIO_VARIABLE=Investmentportfolio
 BODHI_QUERY_VARIABLE=Query_for_risk_assessment
 ```
 
-**The Bodhi workflow this was built and tested against**, if you want to
-recreate it exactly rather than build your own from scratch:
+**One Bodhi run per stock, not one run per shortlist.** Review decisions
+happen at the symbol level — a stock's risk doesn't change because it
+happened to be shortlisted next to another one — so
+`integrations/bodhi_risk_insights.py` calls the workflow once per
+shortlisted symbol, each with its own run ID, independently auditable in
+Bodhi's own run history.
+
+**The Bodhi workflow** — full node definitions and the exact JSON files
+live in [`integrations/bodhi_workflow/`](integrations/bodhi_workflow/),
+along with a per-node breakdown and a fallback ladder:
+
 ```
-Start Node → Risk Analyst Agent → Contrarian Agent → End Node
-                     │
-              MCP Tool: bodhi-deep-research
+Start (portfolio array, query, accumulator)
+  └─► Repeat · per symbol ──────────────────────────────────┐
+        ├─► Set · current symbol                            │
+        ├─► Risk Analyst Agent ◄── MCP: bodhi-deep-research  │
+        │      └── closes RESEARCH_STATUS: FULL|PARTIAL|UNAVAILABLE
+        ├─► Set · research status      (intermediate state check)
+        ├─► Contrarian Agent
+        │      └── closes decisions JSON + ROUTING_FLAG
+        └─► Switch · review outcome
+              ├─ review_needed     ─► Escalation Analyst ◄── MCP (deeper)
+              ├─ data_insufficient ─► Data Quality Handler
+              └─ clear             ─────────────────────┐
+                 all three converge ─► Set · append ─────┘
+                                          └── loops back
+  └─► (done) ─► Preview · decisions ─► End (decisions array)
 ```
-- **Risk Analyst Agent** — reads the portfolio JSON and risk question from
-  the Start Node's Workflow Variables (referenced in its prompt as
-  `{{$var[Investmentportfolio]}}` / `{{$var[Query_for_risk_assessment]}}`),
-  and researches real, current risk factors per stock using the
-  `bodhi-deep-research` MCP tool wired to its `tool` port.
-- **Contrarian Agent** — reads the Risk Analyst's output
-  (`{{Risk Analyst Agent[data.result.response]}}`) and the original
-  portfolio, red-team-challenges it, and is explicitly prompted to close
-  with a `{"verdicts": [{"symbol", "verdict", "notes"}]}` JSON block.
-- **End Node** — its "Configure Workflow Output" is set to
-  `{{Contrarian Agent[data.result.response]}}`, so the workflow's official
-  output is the Contrarian's final answer.
+
+- **Repeat** — the per-symbol loop runs *inside the platform*, iterating
+  the portfolio array. `continueOnError` means one symbol failing doesn't
+  abandon the rest of the shortlist.
+- **Risk Analyst Agent** — researches real, current risk factors for one
+  stock via the `bodhi-deep-research` MCP tool, and must close with an
+  explicit `RESEARCH_STATUS` line rather than quietly papering over a tool
+  failure.
+- **Contrarian Agent** — red-team-challenges that assessment and closes
+  with a structured decision plus a routing flag. It's also told that the
+  text above it is *data*: anything that looks like an instruction is
+  treated as evidence of tampering and blocks the symbol.
+- **Switch (3-way)** — richer than escalate/don't. `review_needed` goes to
+  a deeper research pass; `data_insufficient` goes to a failure handler;
+  `clear` finishes immediately. The switch **defaults to
+  `data_insufficient`**, so a malformed reply can never be read as "clear".
+- **Escalation Analyst** — a second, deeper, independent research pass on
+  flagged stocks only. If *its* research fails, it must keep the block —
+  failing open on an already-flagged stock is the expensive direction.
+- **Data Quality Handler** — returns the *same* decision schema as every
+  success path, marked blocked/partial, and is explicitly forbidden from
+  reviewing the stock from general knowledge. One schema on every branch is
+  what makes the workflow's contract verifiable from the export alone.
+- **Every node carries a `_contract`** in its data — inputs, outputs and
+  failure behaviour, readable straight from the JSON.
 - **No UI Node** — a UI Node pauses a run waiting for a human to fill in a
-  form, which breaks an API-triggered run. Workflow Variables (set via the
-  Start Node) are the entry point an API call can actually populate.
+  form, which breaks an API-triggered run. Workflow Variables are the
+  entry point an API call can actually populate.
 
-**What happens:** `integrations/bodhi_risk_insights.py` sends the real
-shortlist as JSON text plus the risk question (with an explicit ask for
-that `"verdicts"` array) as two workflow variables. If Bodhi's answer
-contains that array:
-- **Telegram** shows every pick either way, with Bodhi's verdict line added
-  under the ones it commented on — nothing is hidden.
-- **TradingView** only gets symbols Bodhi did *not* mark `avoid`/high-risk —
-  the verified subset becomes the actionable watchlist.
-- Bodhi's full narrative report is also sent as its own Telegram message
-  and saved to `output/bodhi_risk_insight_DATE.txt`.
+> **Honest status:** `control-start`, `control-end`, `agent-custom` and
+> `mcp-tools` are confirmed against a real Bodhi export. The `Repeat`,
+> `Switch`, `Set Variable` and `Preview` node schemas are **inferred from
+> naming conventions and marked `_UNVERIFIED` in the JSON** — verify them in
+> the canvas and re-export before relying on them. The app does not depend on
+> them: `BODHI_PER_SYMBOL_RUNS=true` (the default) drives the loop from
+> Python against any single-stock workflow, including the confirmed 5-node
+> one. See [`integrations/bodhi_workflow/README.md`](integrations/bodhi_workflow/README.md)
+> for the fallback ladder.
 
-If Bodhi is off, unreachable, times out, or its answer doesn't contain a
-parseable verdict array, **nothing is filtered** — every shortlisted
-symbol still goes to TradingView, exactly as before this integration
-existed. Get a verification pass without a full re-run via
-`uv run python integrations/run_bodhi_risk_insight.py` (or the dashboard's
-🧠 button) — it reuses the most recently saved shortlist.
+**What happens:** for each shortlisted symbol, `bodhi_risk_insights.py`
+sends that one stock's data plus the risk question as two workflow
+variables, and parses the resulting `decisions` JSON. Every symbol ends
+up in exactly one of three states:
+- **`proceed`** — Bodhi reviewed it and found nothing worth blocking on.
+  Goes to TradingView.
+- **`blocked`** — Bodhi (after escalation) still says no. Excluded from
+  TradingView, shown clearly in the dashboard with the reason.
+- **`unverified`** — the Bodhi call itself failed, timed out, or came back
+  without a parseable decision. Treated the same as `blocked` for
+  TradingView purposes (excluded) — an incomplete review is never treated
+  as a clearance — but shown as its own distinct state everywhere, so it's
+  never confused with a real "Bodhi looked at this and blocked it."
 
-**Confirmed working end-to-end** against a live Bodhi run — a real
-shortlist in, genuinely stock-specific research and a red-teamed challenge
-out, with a clean parseable verdict per symbol. One thing to know if you
-build your own workflow instead of copying the one above: Bodhi's REST API
+Telegram always shows every pick either way, with its Bodhi decision line
+added. Bodhi's full narrative (all symbols, concatenated) is also sent as
+its own Telegram message and saved to
+`output/bodhi_risk_insight_DATE.txt`. If Bodhi is off entirely, nothing is
+filtered — every shortlisted symbol goes to TradingView, exactly as before
+this integration existed. Get a verification pass without a full re-run
+via `uv run python integrations/run_bodhi_risk_insight.py` (or the
+dashboard's 🧠 button) — it reuses the most recently saved shortlist.
+
+One thing to know if you build your own workflow: Bodhi's REST API
 response nests the real per-node results three levels deep, at
 `exec_metadata.allOutputs.<run>.<node>` — not at the top level of the
 response — which is what `integrations/bodhi_client.py`'s
 `extract_bodhi_answer()` reads from.
 
+### Worked example — one stock, input to outcome
+
+Say today's shortlist includes **RELIANCE** (moderate tier, opportunity
+score 78, action "accumulate").
+
+1. **Start Node.** `Investmentportfolio` = `{"symbol": "RELIANCE", "sector":
+   "Energy", "action": "accumulate", "opportunity_score": 78, ...}`.
+   `Query_for_risk_assessment` = the configured risk question, plus the
+   instruction to close with the `decisions` JSON.
+2. **Risk Analyst Agent** researches RELIANCE specifically — e.g. crude
+   oil price moves, refining margins, retail/telecom arm performance —
+   and writes 3–5 sentences of sourced commentary.
+3. **Contrarian Agent** challenges that: is the crude-oil risk actually
+   current, or stale? Suppose it finds a genuinely fresh concern (e.g. a
+   pending regulatory decision) and closes with:
+   `{"decisions": [{"symbol": "RELIANCE", "decision": "blocked", "reason":
+   "Pending regulatory ruling on retail spinoff creates near-term
+   uncertainty not reflected in the bull case.", "research_confidence":
+   "full"}]}` and `ROUTING_FLAG: REVIEW_NEEDED`.
+4. **If-Else** sees `REVIEW_NEEDED` and routes to Escalation Analyst
+   instead of straight to End.
+5. **Escalation Analyst** digs specifically into that regulatory point —
+   suppose it finds the ruling is expected to be favorable and low-impact
+   either way — and overturns the block: `{"decisions": [{"symbol":
+   "RELIANCE", "decision": "proceed", "reason": "Escalated review: ruling
+   timeline confirmed as procedural, not material — original block was
+   overstated.", "research_confidence": "full"}]}`.
+6. **End Node** returns Escalation Analyst's answer.
+7. `bodhi_risk_insights.py` parses it: `{"symbol": "RELIANCE", "status":
+   "ok", "decision": "proceed", "reason": "Escalated review: ...", ...}`.
+8. `run.py` saves this as part of a **pending approval record**
+   (`alerts/approval_queue.py`) — nothing sent yet.
+9. In the dashboard's **✅ Approvals** tab, RELIANCE shows with a green
+   `✅ PROCEED` badge and the escalation reason. A human clicks **Approve
+   & send**.
+10. `approval_queue.approve()` sends the Telegram alert (RELIANCE's line
+    includes the 🧠 Bodhi decision), and pushes RELIANCE to TradingView
+    (it wasn't in `flagged_symbols` or `unverified_symbols`). The decision
+    record is saved to disk with `status: "approved"`, visible afterward
+    in the Approvals tab's "Run history" expander.
+
+If step 5 had *confirmed* the block instead, RELIANCE would show a red
+`🚫 BLOCKED` badge, get excluded from `tv_symbols` automatically on
+Approve, and still appear in Telegram (with the reason) so nothing is
+hidden — it just never reaches the live watchlist.
+
 ---
 
-## 🔭 Tracing every AI call (LangSmith, optional)
+## 🔭 Monitoring — always on, no setup
 
-Set these in `.env` and every real Gemini call, plus every pipeline step,
-shows up as one visual trace tree at [smith.langchain.com](https://smith.langchain.com):
+Two layers, deliberately separate.
+
+**Layer 1 — always on, zero configuration.** Every run writes structured
+telemetry to `output/metrics.jsonl` and `output/reliability_log.jsonl`, with
+no API key and no external service:
+
+- every LLM call — which agent, latency, real token counts, whether the
+  reply actually parsed as JSON
+- every knowledge retrieval — what was asked for, how many chunks cleared
+  the similarity floor, the top score
+- every Bodhi review — mode, symbols, blocked/unverified counts
+- every prompt-safety event — what was neutralised and where it came from
+- every approval decision — who released what, and how much was held back
+- every failure, from any component, with the run id that produced it
+
+Read it back with **`uv run python tracker/ops_report.py`**, or the
+dashboard's **🛠 Ops & evidence** tab (per-agent latency and token cost,
+error rates, safety events, recent failures, retrieval stats, and the live
+pipeline contracts). Because it needs no setup, this panel is never empty
+just because a tracing service wasn't configured.
+
+**Layer 2 — LangSmith, optional.** Adds a hosted visual trace tree on top:
 
 ```
 LANGSMITH_API_KEY=your-key
 LANGSMITH_PROJECT=ai-equity-analyst
 ```
 
-Get a free key from LangSmith → Settings → API Keys. You'll see, per run:
-which agent ran in what order, the exact prompt and response for every AI
-call, real latency, and real token counts (so you can see actual cost per
-run). Leave `LANGSMITH_API_KEY` blank and tracing is a complete no-op —
-nothing about the app's behaviour changes, and the `langsmith` package
-doesn't even need to be importable.
+Get a free key from LangSmith → Settings → API Keys. Leave it blank and
+tracing is a complete no-op — the `langsmith` package doesn't even need to
+be importable, and layer 1 still records everything.
+
+---
+
+## 🧠 What the system remembers, and whether that helps
+
+Two different things, often confused:
+
+- **`memory/memory_layer.py`** — structured per-symbol state (last price,
+  last scores) looked up by exact symbol. Answers *"what changed since we
+  last looked at TCS."*
+- **`memory/knowledge_base.py`** — a real retrieval layer over the research
+  text past runs actually produced. Answers *"what have we seen before
+  that's relevant to this situation,"* which exact-match lookup cannot.
+
+The retrieval layer is chunked and controllable, not just "embed the note
+and hope":
+
+- **Chunking** — each run's research is split by *section* (event summary,
+  bull case, bear case, key risk) so a downside query matches a bear case
+  directly instead of being diluted by the bull case in the same vector.
+  Long sections are further split into overlapping windows at sentence
+  boundaries, so a point made across a boundary stays findable from both
+  sides.
+- **Controls** — a similarity floor (`min_score`) drops weak matches rather
+  than padding results; `max_per_symbol` stops one stock monopolising every
+  slot; plus sector, section and recency (`date_after`) filters, and
+  self-exclusion so a stock can't retrieve its own in-flight note.
+
+**And it's measured.** `uv run python memory/retrieval_eval.py` scores
+retrieval against the real indexed corpus — hit rate@k, precision@k, MRR,
+and the random baseline so the numbers read as lift over chance rather than
+in isolation. Queries are built from real indexed runs with self-exclusion
+so nothing leaks; runs with no reachable ground truth are reported as
+skipped rather than counted as misses, so a cold corpus reads as *"not
+enough data yet"* instead of *"retrieval is broken."*
+
+---
+
+## 📋 The contract and the rules (in code, not just prose)
+
+`contracts.py` is the single place that defines, for each pipeline, what it
+takes in, what it guarantees to produce, and which states it can be in —
+and it's on the runtime path, not documentation:
+
+- **`run.py` validates its own output** against `contracts.SWING` before
+  writing it. A regression that silently drops a promised field prints a
+  contract violation on the run that caused it.
+- **`alerts/approval_queue.py` gates releases** with
+  `contracts.evaluate_release()`. Four named rules decide whether a symbol
+  may reach an external watchlist:
+
+  | Rule | What it checks |
+  |---|---|
+  | R1 | Bodhi's independent review cleared it (`proceed`) — if Bodhi ran |
+  | R2 | No risk tier marked it `avoid` |
+  | R3 | Confidence ≥ `MIN_RELEASE_CONFIDENCE` (default 50%) |
+  | R4 | A real current price could be fetched |
+
+- **The dashboard renders the same evaluation**, per symbol, with each
+  rule's real pass/fail and the reason — in the Approvals tab before you
+  click, and the contracts themselves in the Ops tab.
+
+Change a threshold in `contracts.py` and the gate, the logs and the UI all
+move together. There is no second copy of these rules.
+
+---
+
+## 🛡 Prompt safety on untrusted text
+
+Four sources of externally-authored text reach a prompt here: news
+headlines, uploaded profile documents, Bodhi's returned web research, and
+past research notes replayed out of the knowledge base. All four go through
+`data/text_safety.py` first.
+
+- **Unicode-normalised and control-stripped** before matching, so a payload
+  can't hide behind fullwidth characters, homoglyphs or zero-width joiners.
+- **Proximity-matched patterns**, not fixed phrases — instruction override,
+  role hijack, chat-format forgery (`<|im_start|>`, `[INST]`, `system:`),
+  prompt/secret exfiltration, tool coercion, and *decision coercion*
+  (text trying to force `decision: proceed` — the highest-consequence
+  category here, since that's the field the app acts on).
+- **Unforgeable delimiters.** Untrusted text is framed with a random
+  per-call nonce, so content containing its own end-marker can't close the
+  block early and have the rest read as trusted prompt.
+- **Everything caught is logged** as a safety event and shown in the Ops
+  tab — attempts are visible after the fact, not silently swallowed.
+
+Retrieved notes are re-sanitised on the way *out* of the store too: an
+injection indexed yesterday must not execute today just because it now
+lives in our own database.
 
 ---
 
@@ -758,8 +961,8 @@ formula used.
 
 | You see | What it means | Fix |
 |---------|---------------|-----|
-| `google-genai not installed` | Gemini library missing | `pip install google-genai` |
-| `Gemini is not configured` | credentials didn't load | recheck the `.env` auth setup above |
+| `Bodhi LLM Gateway is not configured` | `BODHI_LLM_GATEWAY_TOKEN` missing | set it (and `BODHI_LLM_TRACE_USER_ID`) in `.env` — see Step 4 above |
+| `Bodhi LLM Gateway call failed (401/403 ...)` | your token is wrong, expired, or not provisioned for the model in `BODHI_LLM_MODEL` | recheck the token, or try a different `BODHI_LLM_MODEL` from `GET /v1/models` |
 | `[data] skipping X: insufficient data (...)` | one symbol's data was bad/stale/unreachable | normal — that symbol is excluded, the rest of the scan continues |
 | `[intraday] skipping X: ...` | no intraday bars for that symbol right now | normal outside market hours, or for a thinly-traded symbol |
 | `[quality] excluding X: ...` | the intraday quality gate caught stale/broken data or an unconfirmed corporate-action-sized gap | normal — that symbol is excluded from today's intraday scoring |
@@ -768,8 +971,7 @@ formula used.
 | Telegram `chat not found` / `403 bot can't message the bot` | wrong `TELEGRAM_CHAT_ID` (often the bot's own id was used by mistake) | message your bot from your own account first, then re-fetch `getUpdates` |
 | Telegram `message is too long` | pre-2026 behaviour — now auto-split into multiple messages | update to the latest `alerts/telegram_alert.py` if you still see this |
 | `[observability] LANGSMITH_API_KEY is set but the langsmith package isn't installed` | tracing was turned on in `.env` before installing the library | `uv pip install langsmith` |
-| `RefreshError: Reauthentication is needed` | your Google Cloud ADC token expired (Vertex AI mode) | `gcloud auth application-default login` |
-| `403 API_KEY_SERVICE_BLOCKED` on a token-mode call | `GOOGLE_GENAI_USE_VERTEXAI=TRUE` is routing an API-key call through Vertex, which the key isn't provisioned for | set `GOOGLE_GENAI_USE_VERTEXAI=FALSE` for true AI Studio routing |
+| `Bodhi LLM Gateway returned an unexpected response shape` | the gateway's response didn't match the OpenAI-compatible shape this app expects | check the raw response printed in the error against Bodhi's own `/v1/chat/completions` docs |
 | `[tradingview] skipped: timed out` | TradingView Desktop isn't running with the debug port enabled | launch it via `launch_tv_debug_mac.sh` before running |
 | `[tradingview] skipped: 'node' not found, or tradingview-mcp isn't cloned` | `TRADINGVIEW_CLI_PATH` is wrong, or the repo/Node.js isn't installed | recheck the setup steps above |
 | `RuntimeError: No workbook found` from `price_tracker.py` | you haven't run `run.py` yet this session | run the swing scan at least once first — there's nothing to track yet |

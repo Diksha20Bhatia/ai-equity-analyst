@@ -2,12 +2,13 @@
 profile_loader.py  —  "Your preferences, in any format"
 =======================================================
 Reads an investor profile from .txt / .md / .pdf / .html / .docx / .xlsx,
-then uses Gemini to normalise the messy text into ONE clean structured
-object the Decision Agent can act on. If Gemini is unavailable it does a
-light keyword-based extraction instead.
+then calls Bodhi's LLM Gateway (config.call_bodhi_llm) to normalise the
+messy text into ONE clean structured object the Decision Agent can act
+on. If the gateway isn't configured or the call fails, it does a light
+keyword-based extraction instead.
 
 A .json profile is treated as ALREADY structured (e.g. built from the
-dashboard's dropdown form) and loaded directly — no Gemini call needed,
+dashboard's dropdown form) and loaded directly — no AI call needed,
 which is also a free win for the app's token budget.
 
 Returned shape:
@@ -25,7 +26,8 @@ Returned shape:
 
 import os
 import json
-from config import client, settings
+from config import call_bodhi_llm
+from data.text_safety import wrap_untrusted
 
 
 # ---------------------------------------------------------------------
@@ -88,36 +90,32 @@ def _read_text(path: str) -> str:
 # Step 2: turn raw text into a structured profile object.
 # ---------------------------------------------------------------------
 def _structure_with_gemini(raw: str) -> dict:
-    if client is None or not raw.strip():
+    """`raw` came from a document YOU uploaded, but it's still text from
+    outside the app's own code — wrapped via data/text_safety.py so a
+    document that tried to smuggle in prompt instructions (deliberately
+    or via corrupted content) gets treated as inert data, not commands."""
+    if not raw.strip():
         return {}
     try:
-        from google.genai import types
         prompt = (
             "Read this investor profile and extract the fields below. "
             "If a field is missing, use a sensible default or empty list. "
             "capital_numeric and max_position_pct must be null unless the text states "
             "an actual number — never estimate or guess them.\n\n"
-            f"PROFILE TEXT:\n{raw}\n\n"
+            f"PROFILE TEXT:\n{wrap_untrusted(raw, source='profile_document')}\n\n"
             'Reply as JSON only: {"risk_appetite": "conservative/moderate/aggressive", '
             '"capital_available": "string", "capital_numeric": <INR number or null>, '
             '"max_position_pct": <number 0-100 or null>, '
             '"investment_horizon": "short/medium/long", '
             '"sector_preferences": [..], "sector_exclusions": [..], "constraints": "string"}'
         )
-        resp = client.models.generate_content(
-            model=settings.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json",
-            ),
-        )
-        text = (resp.text or "").strip().strip("`")
+        text, _usage = call_bodhi_llm(prompt=prompt, temperature=0.1, json_mode=True)
+        text = text.strip("`")
         if "{" in text:
             text = text[text.find("{"):]
         return json.loads(text)
     except Exception as e:  # noqa: BLE001
-        print(f"[profile] Gemini structuring failed, using keyword fallback. ({e})")
+        print(f"[profile] AI structuring failed, using keyword fallback. ({e})")
         return {}
 
 

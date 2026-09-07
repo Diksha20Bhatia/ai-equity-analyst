@@ -1,0 +1,257 @@
+{
+  "nodes": [
+    {
+      "id": "d1",
+      "data": {
+        "input": {
+          "variables": [
+            {
+              "name": "Investmentportfolio",
+              "type": "string",
+              "value": "default value",
+              "description": ""
+            },
+            {
+              "name": "Query_for_risk_assessment",
+              "type": "string",
+              "value": "default value",
+              "description": ""
+            }
+          ],
+          "description": "workflow variables"
+        },
+        "label": "start",
+        "output": {
+          "data": {
+            "Investmentportfolio": "default value",
+            "Query_for_risk_assessment": "default value"
+          }
+        },
+        "variables": [
+          {
+            "name": "Investmentportfolio",
+            "path": "Investmentportfolio",
+            "type": "string",
+            "description": "Custom Variable Investmentportfolio of type string"
+          },
+          {
+            "name": "Query_for_risk_assessment",
+            "path": "Query_for_risk_assessment",
+            "type": "string",
+            "description": "Custom Variable Query_for_risk_assessment of type string"
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "control-start",
+      "measured": { "width": 32, "height": 32 },
+      "position": { "x": 410, "y": 60 },
+      "selected": false,
+      "deletable": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "8b9e6b7a-f063-494c-a002-551df28c6181",
+      "data": {
+        "input": {
+          "name": "Risk Analyst Agent",
+          "role": "default",
+          "model": "claude-sonnet-4-5@20250929",
+          "skills": [],
+          "showPlan": false,
+          "userquery": "Research and write your risk commentary now, following the instructions above.",
+          "description": "agent description...",
+          "systemPrompt": "You are a Risk Analyst reviewing a real equity portfolio before it goes live on a trading watchlist.\n\nPortfolio (JSON — symbol, sector, action, opportunity_score, confidence, current price, target price, bull case, bear case, risk %, ₹ allocated):\n\n{{$var[Investmentportfolio]}}\n\nRisk question:\n\n\n{{$var[Query_for_risk_assessment]}}\n\n\n\nFor EACH stock in the portfolio, use your research tool to investigate CURRENT, REAL risk factors specific to that stock — e.g. crude oil moves for energy-linked names, Fed/tariff policy for IT/export names, RBI policy for financials, sector-specific demand trends. Tie every risk you raise back to a named stock and its actual sector/exposure in the data above — do not give a generic market overview. Write 2-4 sentences of researched commentary per stock.\n\n\n",
+          "default_tools": [],
+          "guardrailChecks": [],
+          "roleDescription": "",
+          "selectedPersonaId": "",
+          "selectedSourceSetIds": []
+        },
+        "label": "Risk Analyst Agent",
+        "output": { "response": { "output": "" } },
+        "variables": [
+          {
+            "name": "response",
+            "path": "data.result.response",
+            "type": "string",
+            "description": "agent response text"
+          }
+        ],
+        "layoutDirection": "LR",
+        "mcpToolsLastUpdated": 1787827737888,
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "agent-custom",
+      "measured": { "width": 199, "height": 62 },
+      "position": { "x": 590, "y": 40 },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "aee96568-2d8b-4aac-8dbc-c85c1a56ab85",
+      "data": {
+        "input": {
+          "tools": ["bodhi_deep_research-deep_research"],
+          "server": {
+            "env": {},
+            "url": "https://bodhi-mcp.sandbox.psbodhi.live/mcp/bodhi_deep_research",
+            "args": [],
+            "name": "bodhi-deep-research",
+            "tools": [
+              {
+                "name": "bodhi_deep_research-deep_research",
+                "_meta": { "_fastmcp": { "tags": [] } },
+                "description": "Conduct deep research on a given topic and generate a comprehensive report.",
+                "inputSchema": {
+                  "type": "object",
+                  "required": ["topic"],
+                  "properties": {
+                    "topic": { "type": "string" },
+                    "search_api": { "anyOf": [{ "type": "string" }, { "type": "null" }], "default": null },
+                    "max_search_depth": { "type": "integer", "default": 2 },
+                    "number_of_queries": { "type": "integer", "default": 2 }
+                  }
+                },
+                "outputSchema": {
+                  "type": "object",
+                  "required": ["result"],
+                  "properties": { "result": { "type": "string" } },
+                  "x-fastmcp-wrap-result": true
+                }
+              }
+            ],
+            "authKey": "",
+            "command": "",
+            "headers": { "authorization": "Bearer {{$context[access_token]}}" },
+            "transport": "http"
+          },
+          "serverName": "bodhi-deep-research",
+          "selectedCredentialId": null
+        },
+        "label": "bodhi-deep-research",
+        "lastUpdated": 1787827737888,
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "mcp-tools",
+      "measured": { "width": 201, "height": 54 },
+      "position": { "x": 594, "y": 186 },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "44f0e5d0-a0ca-45cd-9676-caf6f2f96aa1",
+      "data": {
+        "input": {
+          "name": "Contrarian Agent",
+          "role": "default",
+          "model": "claude-sonnet-4-5@20250929",
+          "skills": [],
+          "showPlan": false,
+          "userquery": "Perform your challenge and produce the verdicts JSON now, following the instructions above.",
+          "description": "agent description...",
+          "systemPrompt": "You are a Contrarian Agent — a red-team reviewer challenging a Risk Analyst's assessment before it decides what goes on a live trading watchlist.\nRisk Analyst's assessment:\n{{Risk Analyst Agent[data.result.response]}}\nOriginal portfolio (for the full list of symbols you must return a verdict for):\n{{$var[Investmentportfolio]}}\nChallenge the Risk Analyst's key claims — is each risk current and specific to that stock, or generic/stale? Flag anything a risk-aware investor should treat as a real red flag right now. Where concerns are minor or already priced in, say so — don't manufacture risk.\nEnd your answer with ONLY this JSON, one entry per stock in the portfolio, nothing after it:\n{\"verdicts\": [{\"symbol\": \"...\", \"verdict\": \"clear\" | \"caution\" | \"avoid\", \"notes\": \"one or two sentences, cite the specific reason\"}]}\n",
+          "default_tools": [],
+          "guardrailChecks": [],
+          "roleDescription": "",
+          "selectedPersonaId": "",
+          "selectedSourceSetIds": []
+        },
+        "label": "Contrarian Agent",
+        "output": { "response": { "output": "" } },
+        "variables": [
+          {
+            "name": "response",
+            "path": "data.result.response",
+            "type": "string",
+            "description": "agent response text"
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "agent-custom",
+      "measured": { "width": 188, "height": 62 },
+      "position": { "x": 890, "y": 40 },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "d2",
+      "data": {
+        "label": "End",
+        "output": {
+          "variables": [
+            {
+              "name": "result",
+              "type": "string",
+              "value": "{{Contrarian Agent[data.result.response]}}"
+            }
+          ]
+        },
+        "variables": [
+          {
+            "name": "result",
+            "path": "result",
+            "type": "string",
+            "description": "Output Variable result of type string"
+          }
+        ],
+        "outputData": {
+          "data": {
+            "result": "{{Contrarian Agent[data.result.response]}}"
+          }
+        },
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "control-end",
+      "measured": { "width": 32, "height": 32 },
+      "position": { "x": 1190, "y": 62 },
+      "selected": false,
+      "deletable": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    }
+  ],
+  "edges": [
+    {
+      "id": "d1->8b9e6b7a-f063-494c-a002-551df28c6181",
+      "type": "add-edge",
+      "source": "d1",
+      "target": "8b9e6b7a-f063-494c-a002-551df28c6181"
+    },
+    {
+      "id": "38af75eb-568c-4691-87fa-c3e2692b7da3",
+      "type": "add-edge",
+      "source": "aee96568-2d8b-4aac-8dbc-c85c1a56ab85",
+      "target": "8b9e6b7a-f063-494c-a002-551df28c6181",
+      "sourceHandle": "output",
+      "targetHandle": "tools"
+    },
+    {
+      "id": "06edef26-98e6-43dc-b1b2-ce9b6b9f5392",
+      "type": "add-edge",
+      "source": "8b9e6b7a-f063-494c-a002-551df28c6181",
+      "target": "44f0e5d0-a0ca-45cd-9676-caf6f2f96aa1"
+    },
+    {
+      "id": "contrarian-to-end",
+      "type": "add-edge",
+      "source": "44f0e5d0-a0ca-45cd-9676-caf6f2f96aa1",
+      "target": "d2"
+    }
+  ],
+  "viewport": {
+    "x": 377.8092865734063,
+    "y": 257.1766449675205,
+    "zoom": 0.6950056531776864
+  },
+  "_provenance_note": "This is the historical, fully-confirmed baseline (5 nodes) that was actually run end-to-end against a live Bodhi instance — the Risk Analyst -> Contrarian -> End chain, portfolio sent as one JSON blob covering the whole shortlist. Kept here as a known-good rollback point. The active submission target is workflow-AI-Equity-Analyst-846bb836-ab0a-4b48-9226-1253617a3699.json in this same folder, which restructures the calling pattern to one run per symbol and adds the Escalation Analyst branch. See README.md in this folder for the full explanation. This _provenance_note key is documentation only — remove it before importing into Bodhi if the importer is strict about unknown top-level keys."
+}

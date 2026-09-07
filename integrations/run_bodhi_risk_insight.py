@@ -12,9 +12,10 @@ than a step inside it.
 
 Requires at least one swing run (run.py) to have completed today or
 earlier, and BODHI_ENABLED=true with the Bodhi variables set in .env —
-see .env.example. Prints Bodhi's per-symbol verdicts (if any were found)
-and sends the full report to Telegram; does not touch TradingView here
-(that gating only happens inside a real run.py run).
+see .env.example. Prints Bodhi's per-symbol decisions (proceed/blocked/
+unverified, one independent Bodhi run each) and sends the full report to
+Telegram; does not touch TradingView here (that gating only happens
+inside a real run.py run).
 """
 
 import json
@@ -48,13 +49,14 @@ def run():
     if not result["ran"]:
         raise RuntimeError("Bodhi did not return a result — see the [bodhi] log above.")
 
-    if result["verdicts"]:
-        print("\nPer-symbol verdicts:")
-        for symbol, v in result["verdicts"].items():
-            flag = " ⚠ FLAGGED" if symbol in result["flagged_symbols"] else ""
-            print(f"  {symbol}: {v['verdict']}{flag} — {v['notes']}")
+    if result["decisions"]:
+        print("\nPer-symbol decisions:")
+        icon = {"proceed": "✅", "blocked": "🚫", "unverified": "❔"}
+        for d in result["decisions"]:
+            print(f"  {icon.get(d['decision'], '')} {d['symbol']}: {d['decision'].upper()} "
+                  f"({d['status']}) — {d['reason']}")
     else:
-        print("\nNo structured per-symbol verdict found — see the full report below.")
+        print("\nNo per-symbol decisions were produced — see the full report below.")
 
     from alerts import telegram_alert
     telegram_alert.send("*🧠 Bodhi Risk Insight*\n\n" + result["report"])

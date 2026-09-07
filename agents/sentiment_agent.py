@@ -17,6 +17,7 @@ AI call cheap:
 from difflib import SequenceMatcher
 
 from agents.base_agent import BaseAgent
+from data.text_safety import sanitize_for_prompt, wrap_untrusted
 from observability import traceable
 
 
@@ -44,10 +45,19 @@ class SentimentAgent(BaseAgent):
 
     @traceable(run_type="chain", name="News/Event Reader")
     def run(self, headlines_by_symbol: dict) -> dict:
-        """headlines_by_symbol: {symbol: [real headline, ...]}. One batched call."""
+        """headlines_by_symbol: {symbol: [real headline, ...]}. One batched call.
+
+        Real news headlines are external, untrusted text — a manipulated
+        or adversarially-crafted headline is a real (if unlikely) risk for
+        a model that reads them. Each headline is sanitized individually
+        (see data/text_safety.py) before it's clustered, and the whole
+        assembled block is wrapped with an unforgeable delimiter before it
+        reaches the prompt — a headline containing literal frame-marker
+        text can't close the untrusted block early."""
         blocks = []
         for symbol, headlines in headlines_by_symbol.items():
-            clusters = _dedupe(headlines)
+            clean = [sanitize_for_prompt(h, max_len=300, source="headlines") for h in headlines]
+            clusters = _dedupe(clean)
             if not clusters:
                 blocks.append(f"{symbol}: (no recent news found)")
                 continue
@@ -57,8 +67,11 @@ class SentimentAgent(BaseAgent):
             ]
             blocks.append(f"{symbol}:\n" + "\n".join(lines))
 
+        headlines_block = wrap_untrusted(
+            "\n\n".join(blocks), max_len=8000, source="headlines",
+        )
         prompt = (
-            "Real, deduplicated news clusters for each stock:\n\n" + "\n\n".join(blocks) +
+            "Real, deduplicated news clusters for each stock:\n\n" + headlines_block +
             '\n\nFor EACH symbol, reply as JSON: {"SYM": {'
             '"sentiment": "positive/neutral/negative", '
             '"event_type": "earnings/contract/management_change/regulatory/legal/'

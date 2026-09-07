@@ -53,6 +53,8 @@ def send(text: str) -> bool:
         return False
 
     import requests
+    import observability
+
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     chunks = _chunk(text)
     all_delivered = True
@@ -69,9 +71,11 @@ def send(text: str) -> bool:
             else:
                 print(f"[telegram] failed ({resp.status_code}): {resp.text}")
                 print(part)
+                observability.record_failure("telegram_alert", resp.text[:300], status_code=resp.status_code, part=i)
                 all_delivered = False
         except Exception as e:  # noqa: BLE001
             print(f"[telegram] error: {e}")
             print(part)
+            observability.record_failure("telegram_alert", str(e), part=i)
             all_delivered = False
     return all_delivered

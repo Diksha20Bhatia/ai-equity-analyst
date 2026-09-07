@@ -151,10 +151,13 @@ def get_intraday_bundles(symbols: list) -> dict:
     skipped and logged — resilient to one bad symbol, same as
     market_data.get_bundles().
     """
+    import observability
+
     out = {}
     for sym in symbols:
         try:
             out[sym] = _fetch_intraday_bundle(sym)
         except Exception as e:  # noqa: BLE001
             print(f"[intraday] skipping {sym}: {e}")
+            observability.record_failure("intraday_data_fetch", str(e), symbol=sym)
     return out

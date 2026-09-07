@@ -26,7 +26,7 @@ We don't read the market ourselves and ask one big AI to "figure it out." Instea
 
 ```mermaid
 flowchart TB
-    subgraph Inputs["Real-world data — free, no signup needed (except Gemini)"]
+    subgraph Inputs["Real-world data — free, no signup needed (except Bodhi)"]
         YF["Yahoo Finance<br/>prices & company financials"]
         GN["Google News<br/>real headlines"]
         NSE["NSE India<br/>official stock lists"]
@@ -34,7 +34,7 @@ flowchart TB
 
     subgraph Team["The Research Team — 10 specialists"]
         Calc["5 Calculators<br/>pure maths, zero AI cost"]
-        Think["5 Thinkers<br/>use Google Gemini AI"]
+        Think["5 Thinkers<br/>use Gemini via Bodhi's LLM Gateway"]
     end
 
     subgraph Outputs["Delivered to you"]

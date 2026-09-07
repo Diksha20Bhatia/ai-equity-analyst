@@ -624,7 +624,7 @@ on. Both are flagged in the module's own docstring.
 | Nifty 50 index | `yfinance`, ticker `^NSEI` | `data/market_context.py` | No |
 | News headlines | Google News RSS search feed (`news.google.com/rss/search?q=...`) | `data/market_data.py` | No |
 | Nifty 50/500 constituent lists | NSE's public CSV files (`archives.nseindia.com/.../ind_nifty50list.csv`) | `data/nse_universe.py` | No |
-| AI reasoning | Google Gemini, via the official `google-genai` Python SDK | `agents/base_agent.py` (shared by every AI-calling agent) | **Yes** |
+| AI reasoning | Bodhi LLM Gateway (`POST /v1/chat/completions`, OpenAI-compatible) | `config.call_bodhi_llm()`, called from `agents/base_agent.py` (shared by every AI-calling agent) and `profile/profile_loader.py` | **Yes** |
 | Sending the alert | Telegram Bot API (`api.telegram.org/bot<token>/sendMessage`) | `alerts/telegram_alert.py` | Yes, optional |
 | Storing memory | ChromaDB, a small local vector database (no internet involved) | `memory/memory_layer.py` | No |
 | Tracing AI calls | LangSmith, via the official `langsmith` Python SDK's `@traceable` decorator | `observability.py`, applied across `agents/*.py`, `run.py`, `intraday_run.py`, `intraday_backtest.py` | Yes, optional |

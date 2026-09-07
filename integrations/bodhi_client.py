@@ -21,6 +21,10 @@ from typing import Any, Dict, Optional
 
 import requests
 
+import observability
+
+_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+
 
 def bodhi_headers(pat_token: str, trace_prefix: str) -> Dict[str, str]:
     return {
@@ -28,6 +32,42 @@ def bodhi_headers(pat_token: str, trace_prefix: str) -> Dict[str, str]:
         "Content-Type": "application/json",
         "X-Trace-User-ID": f"{trace_prefix}-{int(time.time())}",
     }
+
+
+def _request_with_retry(method: str, url: str, max_attempts: int = 3, **kwargs) -> requests.Response:
+    """A network blip or a transient 5xx/429 shouldn't kill a Bodhi call
+    outright — retried with exponential backoff. A 4xx (bad request, bad
+    auth) won't fix itself by retrying, so that still fails immediately.
+    Every failure (transient or final) is logged to the reliability log."""
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = requests.request(method, url, **kwargs)
+        except requests.RequestException as e:
+            last_error = f"network error: {e}"
+            observability.record_failure("bodhi_client", last_error, url=url, attempt=attempt)
+            if attempt < max_attempts:
+                time.sleep(2 ** (attempt - 1))
+                continue
+            raise RuntimeError(f"[bodhi] {url} unreachable after {max_attempts} attempts: {e}") from e
+
+        if response.status_code < 400:
+            return response
+        if response.status_code in _RETRYABLE_STATUS and attempt < max_attempts:
+            observability.record_failure(
+                "bodhi_client", response.text[:300], url=url, attempt=attempt,
+                status_code=response.status_code,
+            )
+            time.sleep(2 ** (attempt - 1))
+            continue
+
+        observability.record_failure(
+            "bodhi_client", response.text[:300], url=url, attempt=attempt,
+            status_code=response.status_code,
+        )
+        response.raise_for_status()
+
+    raise RuntimeError(f"[bodhi] {url} failed after {max_attempts} attempts: {last_error}")
 
 
 def start_bodhi_run(
@@ -44,8 +84,9 @@ def start_bodhi_run(
         "runName": run_name or f"run-{int(time.time())}",
         "overrides": {"workflow": workflow_id, "variables": variables},
     }
-    response = requests.post(url, json=payload, headers=bodhi_headers(pat_token, trace_prefix), timeout=30)
-    response.raise_for_status()
+    response = _request_with_retry(
+        "POST", url, json=payload, headers=bodhi_headers(pat_token, trace_prefix), timeout=30,
+    )
     run_id = response.json()["id"]
     print(f"[bodhi] run started: {run_id}")
     return run_id
@@ -62,20 +103,57 @@ def poll_bodhi_run(
 ) -> Dict[str, Any]:
     url = f"{base_url}/api/v1/tasks/{task_id}/runs/{run_id}"
     started = time.time()
+    consecutive_poll_failures = 0
+    max_consecutive_poll_failures = 5  # a real outage, not a single blip
 
     while time.time() - started < timeout:
-        response = requests.get(url, headers=bodhi_headers(pat_token, trace_prefix), timeout=30)
-        response.raise_for_status()
-        data = response.json()
+        # A single poll hiccuping shouldn't kill a wait that's already
+        # built to be patient — log it and try again next interval,
+        # rather than aborting a run that might otherwise still finish.
+        # Only a run of consecutive failures signals a real outage.
+        try:
+            response = requests.get(url, headers=bodhi_headers(pat_token, trace_prefix), timeout=30)
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            consecutive_poll_failures += 1
+            observability.record_failure(
+                "bodhi_client_poll", str(e), url=url, consecutive_failures=consecutive_poll_failures,
+            )
+            print(f"[bodhi] poll attempt failed ({e}) — retrying "
+                  f"({consecutive_poll_failures}/{max_consecutive_poll_failures})")
+            if consecutive_poll_failures >= max_consecutive_poll_failures:
+                raise RuntimeError(
+                    f"[bodhi] {max_consecutive_poll_failures} consecutive poll failures — "
+                    f"treating this as unreachable rather than waiting out the full timeout: {e}"
+                ) from e
+            time.sleep(poll_interval)
+            continue
+
+        consecutive_poll_failures = 0
         status = str(data.get("status", "")).lower()
         print(f"[bodhi] status: {status}")
 
         if status in ("completed", "success", "succeeded"):
             return data
+        if status in ("partial", "completed_with_errors", "degraded"):
+            # A node inside the workflow (most likely the research MCP tool,
+            # which depends on live external search) failed or returned
+            # incomplete data, but the run itself finished — the graph's
+            # exec_metadata still has whatever output DID get produced.
+            # Surfaced distinctly rather than silently treated as a clean
+            # success, so a caller (or a reviewing agent's prompt) can note
+            # low confidence instead of trusting it blindly.
+            observability.record_failure("bodhi_client_poll", "run completed with partial results", run_id=run_id, status=status)
+            print(f"[bodhi] run finished with partial results (status={status}) — using what's available")
+            data["_partial_result"] = True
+            return data
         if status in ("failed", "error", "errored"):
+            observability.record_failure("bodhi_client_poll", "run reported failed status", run_id=run_id, status=status)
             raise RuntimeError(f"[bodhi] run failed:\n{json.dumps(data, indent=2, ensure_ascii=False)}")
         time.sleep(poll_interval)
 
+    observability.record_failure("bodhi_client_poll", "timed out", run_id=run_id, timeout=timeout)
     raise TimeoutError(f"[bodhi] run did not finish within {timeout}s")
 
 
@@ -208,7 +286,24 @@ def call_bodhi_workflow(
     variables: Dict[str, Any],
     poll_interval: float = 5,
     timeout: float = 300,
-) -> str:
+) -> tuple:
+    """Returns (answer_text, partial: bool, run_id: str). `partial` is True
+    when Bodhi itself reported the run as completed-but-degraded (e.g. the
+    research MCP tool failed or returned incomplete data for one or more
+    nodes) — the answer text is still whatever WAS produced, but callers
+    should treat it with lower confidence rather than as a clean,
+    fully-researched result. See poll_bodhi_run()'s handling of
+    "partial"/"completed_with_errors" statuses.
+
+    `run_id` is the real Bodhi run id — this is the one thing a mock or a
+    design document can never produce, and the one thing an evaluator can
+    check against Bodhi's own run history. It is attached to the raised
+    exception (as `.bodhi_run_id`) even when the run times out or errors,
+    so a FAILED attempt is still identifiable evidence, not silently lost."""
     run_id = start_bodhi_run(base_url, pat_token, task_id, workflow_id, trace_prefix, variables)
-    result = poll_bodhi_run(base_url, pat_token, task_id, run_id, trace_prefix, poll_interval, timeout)
-    return extract_bodhi_answer(result)
+    try:
+        result = poll_bodhi_run(base_url, pat_token, task_id, run_id, trace_prefix, poll_interval, timeout)
+    except (TimeoutError, RuntimeError) as e:
+        e.bodhi_run_id = run_id
+        raise
+    return extract_bodhi_answer(result), bool(result.get("_partial_result")), run_id

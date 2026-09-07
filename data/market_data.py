@@ -181,12 +181,15 @@ def get_bundles(symbols: list, index_close=None) -> dict:
     — a data-quality gate, not a crash — so one bad ticker doesn't abort a
     50-500 stock scan.
     """
+    import observability
+
     out = {}
     for sym in symbols:
         try:
             out[sym] = _fetch_bundle(sym, index_close=index_close)
         except Exception as e:  # noqa: BLE001
             print(f"[data] skipping {sym}: insufficient data ({e})")
+            observability.record_failure("market_data_fetch", str(e), symbol=sym)
     return out
 
 

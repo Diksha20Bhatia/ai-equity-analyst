@@ -1,6 +1,7 @@
 # --- Core ---
-google-genai>=1.0.0        # Gemini models (Vertex AI + AI Studio)
 python-dotenv>=1.0.0       # loads the .env file
+# AI calls go through Bodhi's LLM Gateway (config.call_bodhi_llm), a plain
+# REST call — no provider SDK (google-genai, openai, ...) needed.
 
 # --- Market data (real prices/fundamentals) ---
 yfinance>=0.2.40           # free NSE/BSE prices via Yahoo Finance

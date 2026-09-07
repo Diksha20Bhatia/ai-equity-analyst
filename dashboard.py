@@ -21,6 +21,7 @@ secrets, not day-to-day knobs, and stay in .env only.
 """
 
 import datetime as dt
+import html
 import json
 import subprocess
 import sys
@@ -559,8 +560,10 @@ def render_run_controls():
     st.sidebar.divider()
     st.sidebar.header("Run Pipeline")
     st.sidebar.caption(
-        "Runs in this order automatically from step ①. Each step below can "
-        "also be re-triggered on its own, against the latest saved shortlist."
+        "① and ② run automatically. Nothing is sent externally yet — the "
+        "shortlist lands in the ✅ Approvals tab for a human decision before "
+        "Telegram/TradingView (③/④ below are manual re-send tools, not the "
+        "normal path)."
     )
 
     _step_header(1, "Run full swing analysis")
@@ -601,7 +604,10 @@ def render_run_controls():
 
     st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
     _step_header(3, "Send Telegram alert")
-    st.sidebar.caption("Re-sends the latest saved shortlist to Telegram on demand.")
+    st.sidebar.caption(
+        "New shortlists now go through the ✅ Approvals tab first — use this "
+        "only to manually re-send an already-approved shortlist."
+    )
     if st.sidebar.button("📨 Send Telegram alert", use_container_width=True, key="btn_telegram"):
         with st.spinner("Sending the latest shortlist to Telegram..."):
             proc = subprocess.run(
@@ -618,9 +624,10 @@ def render_run_controls():
     st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
     _step_header(4, "Push to TradingView")
     st.sidebar.caption(
-        "Pushes the latest saved shortlist to your real TradingView watchlist. "
-        "Needs TRADINGVIEW_WATCHLIST_ENABLED=true and Desktop running with its "
-        "debug port on."
+        "New shortlists now go through the ✅ Approvals tab first — use this "
+        "only to manually re-push an already-approved shortlist. Needs "
+        "TRADINGVIEW_WATCHLIST_ENABLED=true and Desktop running with its debug "
+        "port on."
     )
     if st.sidebar.button("📺 Push to TradingView", use_container_width=True, key="btn_tv"):
         with st.spinner("Pushing symbols to your TradingView watchlist..."):
@@ -654,6 +661,43 @@ def render_run_controls():
             st.sidebar.success("Price tracker updated.")
         else:
             st.sidebar.error("Price tracker failed — see log above.")
+
+    if st.sidebar.button("📈 Quality report — is it working?", use_container_width=True, key="btn_quality"):
+        with st.spinner("Computing real win-rate from tracked history..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "tracker/quality_report.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("Quality report", expanded=True):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+
+    if st.sidebar.button("🧾 Collect Bodhi run evidence", use_container_width=True, key="btn_evidence"):
+        with st.spinner("Reading real Bodhi run history from telemetry..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "integrations/bodhi_workflow/collect_run_evidence.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("Bodhi run evidence", expanded=True):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+            st.caption("Also saved to integrations/bodhi_workflow/RUN_EVIDENCE.md")
+
+    if st.sidebar.button("🛠 Ops report — what ran, what broke", use_container_width=True, key="btn_ops"):
+        with st.spinner("Reading local telemetry..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "tracker/ops_report.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("Ops report", expanded=True):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+
+    if st.sidebar.button("🔎 Retrieval eval — is memory useful?", use_container_width=True, key="btn_reteval"):
+        with st.spinner("Scoring retrieval against the real indexed corpus..."):
+            proc = subprocess.run(
+                ["uv", "run", "python", "memory/retrieval_eval.py"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+        with st.sidebar.expander("Retrieval eval", expanded=True):
+            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
 
     st.sidebar.divider()
     st.sidebar.header("Intraday · live, separate")
@@ -985,6 +1029,315 @@ def render_intraday_tab():
                     cols[2].metric("Target", f"₹{p['target']:.2f}")
 
 
+def render_release_rules(record: dict):
+    """The business rules that decide what may be pushed externally, shown
+    per symbol with each rule's real pass/fail — evaluated live from
+    contracts.py, so what's displayed is exactly what will gate the push,
+    not a description of it written somewhere else."""
+    import contracts
+
+    plan = contracts.release_plan(
+        record.get("results_by_tier", {}),
+        record.get("bodhi_decisions"),
+        record.get("bodhi_ran", False),
+    )
+    if not plan["detail"]:
+        return
+
+    st.markdown("**📋 Release rules** — what will actually be pushed, and why")
+    st.caption(
+        f"{len(plan['allowed'])} of {len(plan['detail'])} symbol(s) currently pass all rules. "
+        f"Rules and thresholds live in `contracts.py`."
+    )
+
+    for symbol, evaluation in plan["detail"].items():
+        verdict = "✅ releasable" if evaluation["allowed"] else "⛔ held back"
+        with st.expander(f"{symbol} — {verdict}", expanded=not evaluation["allowed"]):
+            for rule in evaluation["rules"]:
+                mark = "✅" if rule["passed"] else "❌"
+                st.markdown(
+                    f"{mark} **{rule['id']} · {rule['name']}**  \n"
+                    f"<span style='color:{COLOR_MUTED};font-size:0.85rem'>"
+                    f"{html.escape(str(rule['detail']))}</span>",
+                    unsafe_allow_html=True,
+                )
+
+
+def render_approvals_tab():
+    """The human checkpoint before anything reaches Telegram/TradingView.
+    Every swing run now saves its shortlist here instead of sending it
+    automatically — see alerts/approval_queue.py."""
+    from alerts import approval_queue
+
+    records = [(p, approval_queue.load(p)) for p in approval_queue.list_queue()]
+    pending = [(p, r) for p, r in records if r["status"] == "pending"]
+    decided = [(p, r) for p, r in records if r["status"] != "pending"]
+
+    if not pending:
+        st.info("No shortlists awaiting approval right now.")
+    else:
+        st.warning(
+            f"**{len(pending)} shortlist(s) awaiting review** — nothing below has "
+            "been sent to Telegram or pushed to TradingView yet."
+        )
+
+    for path, record in pending:
+        with st.container(border=True):
+            st.markdown(f"### {record['run_date']}  ·  saved {record['created_at']}")
+            render_ticker_strip(record["results_by_tier"])
+            for tier, result in record["results_by_tier"].items():
+                render_tier_result(tier, result, multi_tier=len(record["results_by_tier"]) > 1)
+
+            if record.get("bodhi_ran") and record.get("bodhi_decisions"):
+                st.markdown("**🧠 Bodhi per-symbol decisions** — one independent Bodhi run per stock")
+                decision_style = {
+                    "proceed": ("✅", COLOR_GOOD, "PROCEED — goes to TradingView"),
+                    "blocked": ("🚫", COLOR_CRITICAL, "BLOCKED — excluded from TradingView"),
+                    "unverified": ("❔", COLOR_WARNING, "UNVERIFIED — review didn't complete, excluded from TradingView"),
+                }
+                for d in record["bodhi_decisions"]:
+                    icon, color, label = decision_style.get(d["decision"], ("", COLOR_MUTED, d["decision"].upper()))
+                    conf = f" (research: {html.escape(str(d['research_confidence']))})" if d.get("research_confidence") else ""
+                    run_id = d.get("bodhi_run_id")
+                    run_id_html = (
+                        f"<br><span style='color:{COLOR_MUTED};font-size:0.75rem;font-family:\"JetBrains Mono\",monospace'>"
+                        f"Bodhi run: {html.escape(str(run_id))}</span>"
+                        if run_id else
+                        f"<br><span style='color:{COLOR_CRITICAL};font-size:0.75rem'>no Bodhi run id captured</span>"
+                    )
+                    # Escaped, not interpolated raw: `reason` originates from
+                    # Bodhi's web research, so it is externally-authored text
+                    # being placed inside an unsafe_allow_html block.
+                    st.markdown(
+                        f"<div style='margin-bottom:4px'><b>{html.escape(str(d['symbol']))}</b>&nbsp;"
+                        f"{_badge(f'{icon} {label}', color)}{conf}<br>"
+                        f"<span style='color:{COLOR_MUTED};font-size:0.85rem'>"
+                        f"{html.escape(str(d.get('reason', '')))}</span>{run_id_html}</div>",
+                        unsafe_allow_html=True,
+                    )
+            elif record.get("bodhi_ran"):
+                st.caption("Bodhi ran but returned no structured per-symbol decision — see the full report after approving.")
+
+            render_release_rules(record)
+
+            c1, c2 = st.columns(2)
+            if c1.button("✅ Approve & send", key=f"approve_{path}", use_container_width=True):
+                with st.spinner("Sending to Telegram and pushing to TradingView..."):
+                    try:
+                        approval_queue.approve(str(path))
+                        st.success("Approved and sent.")
+                    except Exception as e:
+                        st.error(f"Approval failed: {e}")
+                st.rerun()
+            if c2.button("❌ Reject", key=f"reject_{path}", use_container_width=True):
+                approval_queue.reject(str(path))
+                st.warning("Rejected — nothing was sent.")
+                st.rerun()
+
+    if decided:
+        with st.expander(f"Run history — past decisions ({len(decided)})"):
+            for path, record in decided:
+                icon = "✅" if record["status"] == "approved" else "❌"
+                who_when = (
+                    f"by {record.get('approved_by', '?')} at {record.get('approved_at', '?')}"
+                    if record["status"] == "approved"
+                    else f"at {record.get('rejected_at', '?')}"
+                )
+                bodhi_decisions = record.get("bodhi_decisions") or []
+                if bodhi_decisions:
+                    n_proceed = sum(1 for d in bodhi_decisions if d["decision"] == "proceed")
+                    n_blocked = sum(1 for d in bodhi_decisions if d["decision"] == "blocked")
+                    n_unverified = sum(1 for d in bodhi_decisions if d["decision"] == "unverified")
+                    bodhi_summary = f" · 🧠 ✅{n_proceed} 🚫{n_blocked} ❔{n_unverified}"
+                else:
+                    bodhi_summary = ""
+                st.write(f"{icon} **{record['run_date']}** — {record['status']} ({who_when}){bodhi_summary}")
+                if record["status"] == "approved" and record.get("tv_symbols_sent") is not None:
+                    st.caption(f"Pushed to TradingView: {', '.join(record['tv_symbols_sent']) or '(none)'}")
+
+
+def render_ops_tab():
+    """Runtime evidence: what actually ran, how long it took, what it cost,
+    what broke, what the retrieval layer is doing, and what prompt-safety
+    caught. All read from output/metrics.jsonl + output/reliability_log.jsonl,
+    which are written on EVERY run with no configuration — this panel is
+    never empty because someone forgot to set up a tracing service."""
+    import observability as obs
+
+    metrics = obs.read_metrics()
+    failures = obs.read_failures()
+
+    if not metrics:
+        st.info(
+            "No telemetry recorded yet. Run the swing pipeline once "
+            "(**▶ Run swing analysis now**) and this fills in — no setup required."
+        )
+    else:
+        runs = {}
+        for m in metrics:
+            runs.setdefault(m.get("run_id", "adhoc"), []).append(m)
+
+        llm_calls = [m for m in metrics if m.get("event") == "llm_call"]
+        safety_events = [m for m in metrics if m.get("event") == "safety_event"]
+        retrievals = [m for m in metrics if m.get("event") == "kb_retrieval"]
+        total_tokens = sum(m.get("total_tokens") or 0 for m in llm_calls)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Runs recorded", len(runs))
+        c2.metric("LLM calls", len(llm_calls))
+        c3.metric("Tokens used", f"{total_tokens:,}" if total_tokens else "—")
+        c4.metric("Failures logged", len(failures))
+
+        c5, c6, c7, c8 = st.columns(4)
+        errored = [m for m in llm_calls if m.get("status") == "error"]
+        c5.metric("LLM errors", len(errored))
+        latencies = [m["duration_ms"] for m in llm_calls if m.get("duration_ms")]
+        c6.metric("Median LLM latency",
+                   f"{sorted(latencies)[len(latencies) // 2] / 1000:.1f}s" if latencies else "—")
+        c7.metric("Retrievals", len(retrievals))
+        c8.metric("Prompt-safety hits", len(safety_events),
+                   help="Injection-like spans neutralised in untrusted text before it "
+                        "reached a prompt. Non-zero is not necessarily an attack — "
+                        "financial headlines legitimately contain phrases like 'act as'.")
+
+        st.divider()
+        st.markdown("#### ⏱ Per-agent latency and token cost")
+        by_agent = {}
+        for m in llm_calls:
+            agent = m.get("agent", "unknown")
+            entry = by_agent.setdefault(agent, {"calls": 0, "ms": 0, "tokens": 0, "errors": 0})
+            entry["calls"] += 1
+            entry["ms"] += m.get("duration_ms") or 0
+            entry["tokens"] += m.get("total_tokens") or 0
+            if m.get("status") == "error":
+                entry["errors"] += 1
+        if by_agent:
+            st.dataframe(
+                [
+                    {
+                        "Agent": agent,
+                        "Calls": v["calls"],
+                        "Errors": v["errors"],
+                        "Avg latency": f"{v['ms'] / v['calls'] / 1000:.1f}s" if v["calls"] else "—",
+                        "Total tokens": f"{v['tokens']:,}" if v["tokens"] else "—",
+                    }
+                    for agent, v in sorted(by_agent.items())
+                ],
+                use_container_width=True, hide_index=True,
+            )
+
+        if safety_events:
+            st.divider()
+            st.markdown("#### 🛡 Prompt-safety events")
+            st.caption(
+                "Every instruction-like span neutralised in untrusted text before it "
+                "reached a model — see `data/text_safety.py`."
+            )
+            for e in safety_events[-15:]:
+                findings = ", ".join(str(f) for f in (e.get("findings") or [])[:5])
+                st.markdown(
+                    f"<span style='color:{COLOR_MUTED};font-size:0.85rem'>"
+                    f"{html.escape(str(e.get('timestamp', '')))} · "
+                    f"<b>{html.escape(str(e.get('source', '?')))}</b> · "
+                    f"{e.get('finding_count', 0)} span(s): "
+                    f"{html.escape(findings)}</span>",
+                    unsafe_allow_html=True,
+                )
+
+        if failures:
+            st.divider()
+            st.markdown("#### ⚠ Recent failures")
+            for f in failures[-15:]:
+                st.markdown(
+                    f"<span style='color:{COLOR_MUTED};font-size:0.85rem'>"
+                    f"{html.escape(str(f.get('timestamp', '')))} · "
+                    f"<b>{html.escape(str(f.get('component', '?')))}</b> — "
+                    f"{html.escape(str(f.get('detail', ''))[:200])}</span>",
+                    unsafe_allow_html=True,
+                )
+
+    # ------------------------------------------------------------------
+    st.divider()
+    st.markdown("#### 🔎 Knowledge retrieval")
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        try:
+            from memory.knowledge_base import KnowledgeBase
+            stats = KnowledgeBase().stats()
+            if stats.get("available"):
+                st.write(
+                    f"**{stats.get('chunks', 0)}** indexed chunks · "
+                    f"**{stats.get('distinct_symbols', 0)}** symbols · "
+                    f"**{stats.get('distinct_sectors', 0)}** sectors"
+                )
+                st.caption(
+                    f"Sections: {stats.get('by_section', {})} · "
+                    f"range {stats.get('earliest')} → {stats.get('latest')} · "
+                    f"distance space: {stats.get('distance_space')}"
+                )
+            else:
+                st.caption("chromadb unavailable — retrieval disabled.")
+        except Exception as e:  # noqa: BLE001
+            st.caption(f"Knowledge base unavailable: {e}")
+    with col_b:
+        eval_path = OUTPUT_DIR / "retrieval_eval.json"
+        if eval_path.exists():
+            try:
+                report = json.loads(eval_path.read_text())
+                if report.get("evaluable_queries"):
+                    st.write(
+                        f"**hit@{report['k']}** {report['hit_rate_at_k']:.0%} · "
+                        f"**P@{report['k']}** {report['precision_at_k']:.0%} · "
+                        f"**MRR** {report['mrr']:.2f}"
+                    )
+                    baseline = report.get("random_baseline_precision") or 0
+                    if baseline:
+                        st.caption(
+                            f"vs {baseline:.0%} random baseline "
+                            f"({report['precision_at_k'] / baseline:.1f}x better than chance), "
+                            f"over {report['evaluable_queries']} evaluated queries"
+                        )
+                else:
+                    st.caption(report.get("summary", "Not enough history to evaluate yet."))
+            except (json.JSONDecodeError, OSError, KeyError, ZeroDivisionError):
+                st.caption("Retrieval eval file present but unreadable.")
+        else:
+            st.caption("No retrieval eval yet — run the button in the sidebar.")
+
+    # ------------------------------------------------------------------
+    st.divider()
+    st.markdown("#### 📑 Pipeline contracts")
+    st.caption(
+        "What each pipeline is guaranteed to take in, produce, and which states it "
+        "can be in — read live from `contracts.py`, the same definitions the code "
+        "validates against at runtime."
+    )
+    import contracts
+
+    for contract in contracts.ALL_CONTRACTS:
+        with st.expander(contract.name):
+            st.write(contract.purpose)
+            st.markdown("**Inputs**")
+            for k, v in contract.inputs.items():
+                st.markdown(f"- `{k}` — {v}")
+            st.markdown("**Guaranteed outputs**")
+            for k, v in contract.outputs.items():
+                st.markdown(f"- `{k}` — {v}")
+            st.markdown("**States**")
+            for k, v in contract.states.items():
+                st.markdown(f"- `{k}` — {v}")
+            st.markdown(f"**External effects:** {contract.external_effects}")
+
+    with st.expander("Release rules and thresholds"):
+        st.markdown(
+            f"- **Minimum confidence to release:** {contracts.MIN_RELEASE_CONFIDENCE}%\n"
+            f"- **Stances that can never be released:** {', '.join(contracts.BLOCKING_ACTIONS)}\n"
+            f"- **Bodhi clearance required when Bodhi ran:** "
+            f"{contracts.REQUIRE_BODHI_WHEN_ENABLED}\n"
+        )
+        st.caption("Change these in `contracts.py` and the gate, the logs and this panel all move together.")
+
+
 def main():
     st.set_page_config(page_title="AI Equity Analyst", page_icon="📈", layout="wide")
     inject_terminal_css()
@@ -1007,11 +1360,23 @@ def main():
     st.sidebar.divider()
     render_run_controls()
 
-    swing_tab, intraday_tab = st.tabs(["📊 Swing shortlist", "⚡ Intraday scan"])
+    from alerts import approval_queue
+    pending_count = sum(
+        1 for p in approval_queue.list_queue() if approval_queue.load(p)["status"] == "pending"
+    )
+    approvals_label = f"✅ Approvals ({pending_count})" if pending_count else "✅ Approvals"
+
+    swing_tab, approvals_tab, intraday_tab, ops_tab = st.tabs(
+        ["📊 Swing shortlist", approvals_label, "⚡ Intraday scan", "🛠 Ops & evidence"]
+    )
     with swing_tab:
         render_swing_tab()
+    with approvals_tab:
+        render_approvals_tab()
     with intraday_tab:
         render_intraday_tab()
+    with ops_tab:
+        render_ops_tab()
 
 
 if __name__ == "__main__":

@@ -41,6 +41,8 @@ def add_symbols(symbols: list) -> dict | None:
     if not symbols:
         return None
 
+    import observability
+
     tv_symbols = [f"NSE:{s}" for s in dict.fromkeys(symbols)]  # de-dupe, keep order
 
     try:
@@ -49,22 +51,27 @@ def add_symbols(symbols: list) -> dict | None:
             capture_output=True, text=True, timeout=60,
         )
     except FileNotFoundError:
-        print("[tradingview] skipped: 'node' not found, or tradingview-mcp isn't cloned "
-              f"at {settings.tradingview_cli_path}")
+        detail = f"'node' not found, or tradingview-mcp isn't cloned at {settings.tradingview_cli_path}"
+        print(f"[tradingview] skipped: {detail}")
+        observability.record_failure("tradingview_watchlist", detail, symbols=tv_symbols)
         return {"added": 0, "failed": len(tv_symbols), "results": []}
     except subprocess.TimeoutExpired:
-        print("[tradingview] skipped: timed out — is TradingView Desktop running "
-              "with the debug port enabled?")
+        detail = "timed out — is TradingView Desktop running with the debug port enabled?"
+        print(f"[tradingview] skipped: {detail}")
+        observability.record_failure("tradingview_watchlist", detail, symbols=tv_symbols)
         return {"added": 0, "failed": len(tv_symbols), "results": []}
 
     if proc.returncode != 0:
-        print(f"[tradingview] failed: {proc.stderr.strip() or proc.stdout.strip()}")
+        detail = proc.stderr.strip() or proc.stdout.strip()
+        print(f"[tradingview] failed: {detail}")
+        observability.record_failure("tradingview_watchlist", detail, symbols=tv_symbols)
         return {"added": 0, "failed": len(tv_symbols), "results": []}
 
     try:
         result = json.loads(proc.stdout)
     except json.JSONDecodeError:
         print(f"[tradingview] unexpected output: {proc.stdout.strip()}")
+        observability.record_failure("tradingview_watchlist", f"unexpected output: {proc.stdout.strip()[:300]}")
         return {"added": 0, "failed": len(tv_symbols), "results": []}
 
     added = result.get("added", 0)
