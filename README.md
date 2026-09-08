@@ -61,10 +61,10 @@ There are **two separate pipelines**:
 > actually plain, transparent math on real data — AI is reserved for the
 > things a formula genuinely can't do: reading news, explaining a score, and
 > weighing conflicting evidence into a final call. Every one of those calls
-> goes through **one governed entry point**, `config.call_llm()` — Google
-> Gemini by default, or Bodhi's LLM Gateway instead if
-> `USE_BODHI_LLM_GATEWAY=true` in `.env` — never a provider SDK called
-> directly from agent code.
+> goes through **one governed entry point**, `config.call_llm()` — **Bodhi's
+> LLM Gateway**, and only Bodhi's LLM Gateway. No provider SDK (Gemini,
+> OpenAI, Anthropic) is imported anywhere in this codebase, and there is
+> no alternate backend to fall back to.
 
 📖 **Want the deep-dive?** [HOW_IT_WORKS.md](HOW_IT_WORKS.md) walks through
 every agent, every file, every API call and every formula in plain English
@@ -116,13 +116,31 @@ exactly should the Decision Agent fix — is a genuine judgment call, so
 that part is a real LLM call, made only when the check actually finds
 something wrong.
 
-Separately, the Decision Agent's prompt is grounded with **real retrieval**:
-`memory/knowledge_base.py` stores a small set of India-equity sector-risk
-notes in ChromaDB and retrieves the ones semantically relevant to *each
-stock's own sector* before every Decision Agent call — actual vector
-similarity search, not a static block of text pasted into every prompt
-regardless of relevance, and it returns nothing (never the whole
-knowledge base) if retrieval isn't available.
+Separately, the Decision Agent's prompt is grounded with **real
+retrieval-augmented generation**: `memory/knowledge_base.py` holds a
+curated set of India-equity risk source documents (multi-sentence
+paragraphs per sector, plus cross-sector "general" risk notes), and
+every Decision Agent call runs three real RAG steps, not a static
+text block:
+
+1. **Chunked source material** — each source paragraph is split into
+   overlapping 2-sentence chunks at index time (40 real chunks from 12
+   source documents), so retrieval returns the specific relevant chunk,
+   not a whole undifferentiated paragraph.
+2. **Metadata filtering** — retrieval queries the stock's own
+   sector-tagged chunk pool via an exact ChromaDB `where` filter, and
+   separately queries the "general" pool for cross-sector risk factors
+   (liquidity, index-rebalance flows, governance red flags) — two
+   filtered pools, not one undifferentiated search.
+3. **Query rewriting** — the query text sent to the vector search is
+   built from that stock's own real event type (from the News/Event
+   Reader) and risk flags (from the Risk Agent), not one fixed template
+   reused for every stock in a sector — two stocks in the same sector
+   with different real events retrieve different chunks.
+
+Returns nothing (never the whole knowledge base) if retrieval isn't
+available — a fallback that dumps everything regardless of relevance
+isn't retrieval.
 
 ### The Intraday crew — runs on demand, market hours only
 
@@ -241,6 +259,8 @@ sequenceDiagram
     participant Mem as Memory
     participant DA as Decision Agent (1 AI call<br/>per risk tier)
     participant Bodhi as Bodhi (optional)
+    participant Gate as Approval gate<br/>(NOT auto-published)
+    participant You2 as You (approve_run.py)
     participant TG as Telegram
     participant TV as TradingView (optional)
     participant XL as portfolio_tracker.xlsx
@@ -261,16 +281,22 @@ sequenceDiagram
     Run->>Mem: store today's real scores for next time
     Run->>Bodhi: today's real shortlist, if BODHI_ENABLED
     Bodhi-->>Run: per-symbol verdict (if parseable) + full report
-    Run->>TG: send the shortlist, with any Bodhi verdicts inline
-    Run->>TV: push symbols Bodhi did NOT flag avoid/high-risk<br/>(all of them, if Bodhi didn't run or gave no verdict)
     Run->>XL: write today's dated sheet (selected + top-10 watchlist)
+    Run->>Gate: save as PENDING — a real pause, nothing sent yet
     Run->>You: save output/analysis_DATE.json
+    You2->>Gate: review + explicitly approve (or reject)
+    Gate->>TG: send the shortlist, with any Bodhi verdicts inline
+    Gate->>TV: push symbols Bodhi did NOT flag avoid/high-risk<br/>(all of them, if Bodhi didn't run or gave no verdict)
 ```
 
 If **any** step fails — the Bodhi LLM Gateway unreachable, Yahoo rate-limiting a symbol —
 that step raises with a full error. A single bad symbol is *skipped*
 (logged, not fatal) thanks to the data-quality gate; a Bodhi Gateway outage still
 stops the whole run, since there's no fallback to silently degrade to.
+
+**Nothing is sent to Telegram or pushed to TradingView by `run.py` itself.**
+Every finished shortlist stops as a PENDING run — see
+[§ Human approval before anything gets sent](#-human-approval-before-anything-gets-sent-telegramtradingview).
 
 ## ⚡ What happens during an intraday scan — step by step
 
@@ -308,7 +334,8 @@ outside those hours there are no fresh bars to score.
 
 ```
 ai-equity-analyst/
-├── run.py                        ← runs the full SWING pipeline
+├── run.py                        ← runs the full SWING pipeline (saves a PENDING run — doesn't publish)
+├── approve_run.py                 ← the human checkpoint: review a pending run, then publish (or reject) it
 ├── intraday_run.py                ← runs the full INTRADAY pipeline
 ├── intraday_backtest.py            ← optional end-of-day report card for today's intraday picks
 ├── dashboard.py                     ← Streamlit UI: profile builder, browse runs, trigger a run
@@ -341,15 +368,18 @@ ai-equity-analyst/
 │   └── intraday_signals.py        ← pure-math intraday indicators: VWAP, opening range, volume surge
 │
 ├── memory/memory_layer.py         ← The Notebook — real price/score deltas since your last call
+├── memory/knowledge_base.py       ← real RAG: chunked docs + metadata filtering + query rewriting into the Manager's prompt
 ├── profile/profile_loader.py      ← reads your profile file (PDF/XLSX/HTML/DOCX/TXT/JSON)
+├── safety/text_safety.py          ← guardrails on the one untrusted-input boundary: injection scan + PII redaction
 │
 ├── alerts/
+│   ├── approval_gate.py           ← the real pause: pending -> approved/rejected, never auto-published
 │   ├── telegram_alert.py          ← sends the shortlist to Telegram (or prints it); splits long alerts
 │   ├── tradingview_watchlist.py   ← optional: pushes shortlisted symbols to your real TradingView watchlist
 │   ├── excel_report.py            ← writes each swing run into output/portfolio_tracker.xlsx, one sheet per date
 │   ├── intraday_excel_report.py   ← writes each intraday scan into output/intraday_tracker.xlsx, one sheet per date
-│   ├── trigger_telegram.py        ← standalone: re-send the latest saved shortlist to Telegram on demand
-│   └── trigger_tradingview.py     ← standalone: re-push the latest saved shortlist to TradingView on demand
+│   ├── trigger_telegram.py        ← standalone: re-send the latest APPROVED shortlist to Telegram on demand
+│   └── trigger_tradingview.py     ← standalone: re-push the latest APPROVED shortlist to TradingView on demand
 │
 ├── tracker/
 │   └── price_tracker.py           ← standalone tool, separate from agents/ — appends a real dated price
@@ -374,7 +404,7 @@ formula, every API endpoint — see **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
 
 | Source | What it provides | Used by | Key needed? |
 |---|---|---|---|
-| **LLM backend** (Gemini by default, or Bodhi's LLM Gateway) | News interpretation, final decision synthesis, orchestrator routing, intraday narration/gap review — every AI call in the app, through one governed entry point | `agents/*.py`, plus profile structuring, via `config.call_llm()` | ✅ yes |
+| **Bodhi LLM Gateway** | News interpretation, final decision synthesis, orchestrator routing, intraday narration/gap review — every AI call in the app, through one governed entry point, no alternate backend | `agents/*.py`, plus profile structuring, via `config.call_llm()` | ✅ yes |
 | **Yahoo Finance** (`yfinance`) | Real daily *and* 5-minute price/volume history, real company fundamentals, the Nifty 50 index itself | `data/market_data.py`, `data/market_context.py`, `data/intraday_data.py` | ❌ free |
 | **Google News RSS** | Real, current headlines per stock | `data/market_data.py` (fetch) → `agents/sentiment_agent.py` (interpret) | ❌ free |
 | **NSE archives** | Official Nifty 50 / Nifty 500 constituent symbol lists | `data/nse_universe.py` | ❌ free |
@@ -433,42 +463,28 @@ uv pip install -r requirements.txt      # or: pip install -r requirements.txt
 cp .env.example .env
 ```
 
-**Step 4 — Connect an LLM backend**
+**Step 4 — Connect Bodhi's LLM Gateway**
 
 Every real AI call in this app — news interpretation, decision synthesis,
 orchestrator routing, profile structuring — goes through one governed
-entry point, `config.call_llm()`. It routes to **Google Gemini by
-default**; set `USE_BODHI_LLM_GATEWAY=true` to route through **Bodhi's
-LLM Gateway** instead. Either way, no agent file ever calls a provider SDK
-directly — they only ever call `config.call_llm()`.
+entry point, `config.call_llm()`, which routes to **Bodhi's LLM Gateway**
+and only Bodhi's LLM Gateway. No agent file ever calls a provider SDK
+directly, and there is no alternate backend to fall back to.
 
-*Default — Gemini:*
 ```
-GOOGLE_AUTH_MODE=token          # or "adc" for Vertex AI, or "auto" to try both
-GOOGLE_API_KEY=your-key-here    # https://aistudio.google.com/apikey
-GOOGLE_MODEL=gemini-2.5-pro
-```
-
-*Optional — Bodhi's LLM Gateway:*
-```
-USE_BODHI_LLM_GATEWAY=true
 BODHI_LLM_GATEWAY_URL=https://bodhi-llm-gateway.sandbox.psbodhi.live
 BODHI_LLM_GATEWAY_TOKEN=your-token-here
 BODHI_LLM_TRACE_USER_ID=your-team-name    # Bodhi calls this "ASPIRE TEAM NAME"
 BODHI_LLM_MODEL=gemini-2.5-pro            # check GET /v1/models if unsure
 ```
 
-See `.env.example` for the full set of Gemini auth-mode options (Vertex AI,
-a pre-fetched access token, etc.).
-
 **Step 5 — Run the swing scan**
 ```bash
 uv run python run.py       # or: python run.py
 ```
 
-The header prints which backend is active and whether it's connected —
-`LLM backend : Google Gemini (...)` or `LLM backend : Bodhi LLM Gateway
-(...)`. If it's `NOT CONFIGURED`, `run.py` stops immediately with the
+The header prints `LLM backend : Bodhi LLM Gateway (connected)` when it
+worked. If it says `NOT CONFIGURED`, `run.py` stops immediately with the
 reason — fix `.env` and re-run. Market data (Yahoo Finance, Google News,
 NSE lists) needs no key at all.
 
@@ -576,7 +592,41 @@ prefer editing a file directly:
 
 ---
 
+## 🧑‍⚖️ Human approval before anything gets sent (Telegram/TradingView)
+
+This project hands out real financial recommendations, so `run.py` never
+sends a Telegram alert or pushes to TradingView itself. Every finished
+shortlist is saved as a **PENDING run** (`alerts/approval_gate.py`) and
+stops there — a real pause, not a formality. Nothing is sent until a
+human explicitly approves *that specific run*:
+
+```bash
+uv run python approve_run.py --latest       # review, then a real y/n prompt before publishing
+uv run python approve_run.py                # just list what's pending
+uv run python approve_run.py --show <path>  # review one without acting on it
+uv run python approve_run.py --latest --reject "reason"
+```
+
+Or use the dashboard's **② Review & Approve** section — it shows the same
+summary and has explicit **✅ Approve & publish** / **🚫 Reject** buttons.
+
+This isn't just cosmetic: `alerts/trigger_telegram.py` and
+`alerts/trigger_tradingview.py` (the "re-send" buttons below and in the
+dashboard) read **only** from `output/approved/` — a run that was never
+explicitly approved can never be sent, not even by accident via a
+"re-send the latest" button. A run can only be approved or rejected
+once; approving moves it out of the pending queue so it can't be
+double-published.
+
+For unattended/cron use, `approve_run.py --latest --auto-approve` skips
+the interactive prompt — but that flag has to be typed explicitly every
+time; there is no way to make auto-approval the silent default.
+
+---
+
 ## 📱 Getting alerts on Telegram (optional)
+
+Sent only when you approve a run (see the section above) — never automatically.
 
 1. On Telegram, message **@BotFather**, send `/newbot`, copy the **token**.
 2. **Open a chat with your new bot yourself** and send it any message (e.g.
@@ -602,7 +652,8 @@ messages (`(1/2)`, `(2/2)`, ...) rather than failing silently.
 
 ## 📈 Pushing picks to a real TradingView watchlist (optional)
 
-Every run can also add today's shortlisted symbols to your actual
+Pushed only when you approve a run (see the approval section above) —
+never automatically. Adds today's shortlisted symbols to your actual
 TradingView watchlist — no investment capability, just a list. This is
 **local-only and credential-free**: it drives your already-logged-in
 TradingView Desktop app on your own machine over Chrome DevTools Protocol
@@ -783,6 +834,13 @@ crontab -e
 */30 9-15 * * 1-5  cd /path/to/ai-equity-analyst && uv run python intraday_run.py >> output/intraday_cron.log 2>&1
 ```
 
+`run.py` alone only gets you a pending run — it deliberately does not
+publish. A cron job that should also publish unattended needs an explicit
+second line making that choice out loud, never silently:
+```
+5 8 * * 1-5  cd /path/to/ai-equity-analyst && uv run python approve_run.py --latest --auto-approve >> output/cron.log 2>&1
+```
+
 **Windows**: use Task Scheduler with the same triggers.
 
 ---
@@ -810,6 +868,18 @@ a plain-English reason for each pick's score — it is explicitly never
 allowed to change the score, rank, or conviction that the deterministic
 rules engine already set. Explaining a decision and making a decision are
 kept as two separate steps, so the AI can never quietly override a rule.
+
+**Why publishing is a separate, human step.** `run.py` produces a
+shortlist but never sends it anywhere — see [§ Human approval before
+anything gets sent](#-human-approval-before-anything-gets-sent-telegramtradingview).
+A financial recommendation is exactly the kind of output that shouldn't
+leave the system on the AI's say-so alone.
+
+**Why the one untrusted-input boundary gets a real guardrail.** Every
+prompt this app builds comes from data it fetched itself, except one: an
+uploaded investor profile document. `safety/text_safety.py` scans it for
+prompt-injection patterns and redacts PII before it reaches a prompt — see
+`profile/profile_loader.py`.
 
 See **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)** for the full reasoning and every
 formula used.

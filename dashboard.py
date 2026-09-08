@@ -16,7 +16,7 @@ It lets you:
   - Edit UNIVERSE / TOP_N in .env and trigger a fresh run.py analysis
     without leaving the browser
 
-Gemini/Telegram credentials are intentionally NOT editable here — they're
+Bodhi/Telegram credentials are intentionally NOT editable here — they're
 secrets, not day-to-day knobs, and stay in .env only.
 """
 
@@ -34,6 +34,7 @@ sys.path.insert(0, str(ROOT))
 
 from data import market_data  # noqa: E402
 from profile.profile_loader import load_profile  # noqa: E402
+from alerts import approval_gate  # noqa: E402
 
 OUTPUT_DIR = ROOT / "output"
 ENV_PATH = ROOT / ".env"
@@ -559,8 +560,10 @@ def render_run_controls():
     st.sidebar.divider()
     st.sidebar.header("Run Pipeline")
     st.sidebar.caption(
-        "Runs in this order automatically from step ①. Each step below can "
-        "also be re-triggered on its own, against the latest saved shortlist."
+        "① runs the analysis, but stops there — nothing is sent anywhere. "
+        "② is a real pause: you review and explicitly approve before "
+        "anything can be published. Steps ④–⑥ only ever act on an "
+        "already-approved run."
     )
 
     _step_header(1, "Run full swing analysis")
@@ -577,14 +580,60 @@ def render_run_controls():
         with st.sidebar.expander("Run log", expanded=proc.returncode != 0):
             st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
         if proc.returncode == 0:
-            st.sidebar.success("Run complete.")
+            st.sidebar.success("Run complete — pending your approval below before anything is sent.")
             st.cache_data.clear()
             st.rerun()
         else:
             st.sidebar.error("Run failed — see log above.")
 
     st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
-    _step_header(2, "Bodhi risk verification")
+    _step_header(2, "Review & Approve")
+    st.sidebar.caption(
+        "run.py never sends Telegram alerts or pushes TradingView itself — every "
+        "finished shortlist stops here as a PENDING run. Nothing goes out until "
+        "you explicitly approve THIS run."
+    )
+    pending = approval_gate.list_pending()
+    if not pending:
+        st.sidebar.info("No pending runs.")
+    else:
+        latest = pending[0]
+        record = approval_gate.load(latest)
+        with st.sidebar.expander(f"⏸ Pending: {latest.name}", expanded=True):
+            st.caption(f"Created {record.get('created_at', '?')}")
+            for tier, result in (record.get("results_by_tier") or {}).items():
+                picks = result.get("shortlist", [])
+                symbols = ", ".join(p["symbol"] for p in picks)
+                st.write(f"**[{tier}]** {len(picks)} pick(s): {symbols or '(none)'}")
+            tv_symbols = record.get("tv_symbols") or []
+            st.write(f"TradingView candidates: {', '.join(tv_symbols) or '(none)'}")
+            if record.get("bodhi_ran"):
+                st.write("🧠 Bodhi risk verification ran — full report will be sent to Telegram too.")
+
+            col_approve, col_reject = st.columns(2)
+            if col_approve.button("✅ Approve & publish", use_container_width=True, key="btn_approve"):
+                with st.spinner("Publishing to Telegram/TradingView..."):
+                    proc = subprocess.run(
+                        ["uv", "run", "python", "approve_run.py", "--latest", "--auto-approve"],
+                        cwd=ROOT, capture_output=True, text=True,
+                    )
+                with st.sidebar.expander("Approval log", expanded=proc.returncode != 0):
+                    st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+                if proc.returncode == 0:
+                    st.sidebar.success("Approved and published.")
+                    st.rerun()
+                else:
+                    st.sidebar.error("Approval failed — see log above.")
+            if col_reject.button("🚫 Reject", use_container_width=True, key="btn_reject"):
+                approval_gate.reject(latest, reason="rejected from dashboard")
+                st.sidebar.warning("Rejected — nothing was sent.")
+                st.rerun()
+        if len(pending) > 1:
+            st.sidebar.caption(f"({len(pending) - 1} older pending run(s) — review with "
+                                f"`uv run python approve_run.py --show <path>`)")
+
+    st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
+    _step_header(3, "Bodhi risk verification")
     st.sidebar.caption("Optional (BODHI_ENABLED=true) — an independent second opinion that gates step ④.")
     if st.sidebar.button("🧠 Get Bodhi Risk Insight", use_container_width=True, key="btn_bodhi"):
         with st.spinner("Sending today's shortlist to Bodhi and waiting for its analysis..."):
@@ -600,8 +649,8 @@ def render_run_controls():
             st.sidebar.error("Bodhi call failed — see log above.")
 
     st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
-    _step_header(3, "Send Telegram alert")
-    st.sidebar.caption("Re-sends the latest saved shortlist to Telegram on demand.")
+    _step_header(4, "Send Telegram alert")
+    st.sidebar.caption("Re-sends the most recently APPROVED shortlist to Telegram — refuses if nothing's approved yet.")
     if st.sidebar.button("📨 Send Telegram alert", use_container_width=True, key="btn_telegram"):
         with st.spinner("Sending the latest shortlist to Telegram..."):
             proc = subprocess.run(
@@ -616,11 +665,11 @@ def render_run_controls():
             st.sidebar.error("Telegram send failed — see log above.")
 
     st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
-    _step_header(4, "Push to TradingView")
+    _step_header(5, "Push to TradingView")
     st.sidebar.caption(
-        "Pushes the latest saved shortlist to your real TradingView watchlist. "
-        "Needs TRADINGVIEW_WATCHLIST_ENABLED=true and Desktop running with its "
-        "debug port on."
+        "Pushes the most recently APPROVED shortlist to your real TradingView "
+        "watchlist — refuses if nothing's approved yet. Needs "
+        "TRADINGVIEW_WATCHLIST_ENABLED=true and Desktop running with its debug port on."
     )
     if st.sidebar.button("📺 Push to TradingView", use_container_width=True, key="btn_tv"):
         with st.spinner("Pushing symbols to your TradingView watchlist..."):
@@ -636,7 +685,7 @@ def render_run_controls():
             st.sidebar.error("TradingView push failed — see log above.")
 
     st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
-    _step_header(5, "Update price tracker")
+    _step_header(6, "Update price tracker")
     st.sidebar.caption(
         "Adds today's real price to every past sheet in both "
         "portfolio_tracker.xlsx (swing) and intraday_tracker.xlsx "

@@ -35,7 +35,7 @@ import math
 from collections import Counter
 
 from agents.base_agent import BaseAgent
-from memory.knowledge_base import retrieve_for_sector
+from memory.knowledge_base import retrieve_for_stock
 from observability import traceable
 
 # How far towards the investor's own max position-size % we're willing to
@@ -232,9 +232,15 @@ class DecisionAgent(BaseAgent):
             event = a.get("event", {})
             quality = a.get("data_quality") or []
             quality_txt = "; ".join(quality) if quality else "no issues flagged"
-            retrieved = retrieve_for_sector(a.get("sector"))
+            retrieved = retrieve_for_stock(
+                a.get("sector"),
+                event_type=event.get("event_type"),
+                risk_flags=a.get("risk", {}).get("flags"),
+            )
             retrieved_txt = (
-                "\n  Retrieved domain notes (real semantic retrieval, not generic filler):\n"
+                "\n  Retrieved domain notes (real retrieval — sector-filtered + "
+                "general-risk chunks, query built from this stock's own event "
+                "type and risk flags, not generic filler):\n"
                 + "\n".join(f"    - {r}" for r in retrieved)
             ) if retrieved else ""
             blocks.append(

@@ -4,11 +4,11 @@ base_agent.py
 Every specialist agent inherits from BaseAgent.
 
 It gives them ONE shared skill: "ask the model a question and get JSON
-back". Every call goes through config.call_llm() — Google Gemini by
-default, or Bodhi's LLM Gateway if USE_BODHI_LLM_GATEWAY=true in .env —
-the single entry point for AI in this app. If the active backend isn't
-configured or the call fails, this raises instead of silently degrading —
-callers see the real error.
+back". Every call goes through config.call_llm() — Bodhi's LLM Gateway,
+the single governed entry point for AI in this app; no provider SDK is
+called directly here, and there is no alternate backend. If the gateway
+isn't configured or the call fails, this raises instead of silently
+degrading — callers see the real error.
 
 Every real model call is traced to LangSmith (observability.py) when
 LANGSMITH_API_KEY is set — the actual prompt, response, latency, and real
@@ -18,7 +18,7 @@ nothing here changes.
 """
 
 import json
-from config import call_llm, settings
+from config import call_llm
 import observability
 from observability import traceable
 
@@ -58,8 +58,7 @@ class BaseAgent:
             run = get_current_run_tree()
             if not run:
                 return
-            backend = "Bodhi LLM Gateway" if settings.use_bodhi_llm_gateway else "Gemini"
-            run.name = f"{self.name} — {backend} call"
+            run.name = f"{self.name} — Bodhi LLM Gateway call"
             if usage:
                 run.metadata["usage_metadata"] = {
                     "input_tokens": usage.get("prompt_tokens"),

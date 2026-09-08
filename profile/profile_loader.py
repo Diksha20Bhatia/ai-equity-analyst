@@ -2,10 +2,13 @@
 profile_loader.py  —  "Your preferences, in any format"
 =======================================================
 Reads an investor profile from .txt / .md / .pdf / .html / .docx / .xlsx,
-then uses the active LLM backend (Gemini by default, or Bodhi's LLM
-Gateway if USE_BODHI_LLM_GATEWAY=true) to normalise the messy text into
-ONE clean structured object the Decision Agent can act on. If that call
-fails, it does a light keyword-based extraction instead.
+then uses Bodhi's LLM Gateway to normalise the messy text into ONE clean
+structured object the Decision Agent can act on. If that call fails, it
+does a light keyword-based extraction instead.
+
+The raw text is the one real untrusted-input boundary in this app (see
+safety/text_safety.py) — scanned for prompt-injection patterns and
+PII-redacted before it ever reaches a prompt.
 
 A .json profile is treated as ALREADY structured (e.g. built from the
 dashboard's dropdown form) and loaded directly — no AI call needed,
@@ -27,6 +30,7 @@ Returned shape:
 import os
 import json
 from config import call_llm
+from safety.text_safety import sanitize_untrusted_text
 
 
 # ---------------------------------------------------------------------
@@ -157,6 +161,12 @@ def load_profile(path: str) -> dict:
     raw = _read_text(path)
     if not raw.strip():
         return {}
+    # This is the one real untrusted-input boundary in the whole app — an
+    # uploaded document, arbitrary text from outside the system — so it's
+    # the one place a guardrail belongs: logs (doesn't block) anything
+    # that looks like a prompt-injection attempt, and redacts obvious PII
+    # before it ever reaches a prompt. See safety/text_safety.py.
+    raw = sanitize_untrusted_text(raw, source=f"investor_profile:{os.path.basename(path)}")
     structured = _structure_with_llm(raw)
     if not structured:
         structured = _structure_with_keywords(raw)

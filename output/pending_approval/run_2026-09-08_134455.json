@@ -1,0 +1,201 @@
+{
+  "created_at": "2026-09-08T13:44:55",
+  "date": "2026-09-08",
+  "results_by_tier": {
+    "moderate": {
+      "shortlist": [
+        {
+          "symbol": "BEL",
+          "opportunity_score": 85,
+          "confidence": 90,
+          "action": "accumulate",
+          "bull_case": "Strong business quality with a 9.8 fundamental score and a technical recovery on high volume (1.8x). Earnings growth remains robust despite short-term margin pressures.",
+          "bear_case": "Further margin contraction in upcoming quarters could delay recovery. Government spending delays in defense could impact order execution.",
+          "thesis": "BEL offers a strong fundamental play at a fair valuation. The technical recovery on high volume suggests institutional accumulation post the margin-miss dip.",
+          "target_price": 450.0,
+          "target_price_rationale": "Rebound to previous highs as margins stabilize and order book execution accelerates.",
+          "near_term_outlook": "Likely to consolidate with an upward bias as the market digests the Q1 margin miss and focuses on the strong order pipeline.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Fits well as the sole Industrials pick, balancing the heavy Financial Services tilt in the overall watchlist.",
+          "invalidation": "A break below the recent support of \u20b9384 or further deterioration in operating margins.",
+          "key_risk": "Execution delays in key defense contracts.",
+          "current_price": 410.75,
+          "performance": {
+            "1w": {
+              "change_pct": 1.23,
+              "high": 410.75,
+              "low": 404.0
+            },
+            "1m": {
+              "change_pct": 1.34,
+              "high": 414.45,
+              "low": 404.0
+            },
+            "6m": {
+              "change_pct": -9.42,
+              "high": 462.12,
+              "low": 384.38
+            }
+          },
+          "risk_percent": 0,
+          "conviction": "HIGH",
+          "conviction_note": "The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale.",
+          "suggested_quantity": {
+            "min": 5,
+            "max": 18,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 18
+        },
+        {
+          "symbol": "JIOFIN",
+          "opportunity_score": 80,
+          "confidence": 85,
+          "action": "accumulate",
+          "bull_case": "Exceptional fundamental score (10/10) with cheap historical valuation and massive 121.7% YoY revenue growth in Q2 2026. Strong backing and capital base provide a long-term competitive moat.",
+          "bear_case": "Technical momentum is weak (RSI 30) and the stock is in a clear downtrend. Regulatory changes or slower-than-expected rollouts of lending products could delay profitability.",
+          "thesis": "A high-quality franchise trading at cheap valuations post-correction. The oversold RSI (30.0) presents a low-risk entry point for medium-to-short term reversal.",
+          "target_price": 260.0,
+          "target_price_rationale": "Alignment with historical valuation averages and reflection of the strong Q2 earnings surge.",
+          "near_term_outlook": "May see base-building and sideways movement near \u20b9230 before technical indicators turn positive.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Excellent addition to the Financial Services allocation, offering high-growth digital lending exposure.",
+          "invalidation": "A drop below \u20b9220 on high volume or deterioration in asset quality metrics in upcoming quarters.",
+          "key_risk": "Prolonged technical weakness and slow credit off-take.",
+          "current_price": 233.09,
+          "performance": {
+            "1w": {
+              "change_pct": -1.17,
+              "high": 239.5,
+              "low": 233.09
+            },
+            "1m": {
+              "change_pct": -8.23,
+              "high": 256.05,
+              "low": 233.09
+            },
+            "6m": {
+              "change_pct": -1.0,
+              "high": 264.38,
+              "low": 223.58
+            }
+          },
+          "risk_percent": 10,
+          "conviction": "HIGH",
+          "conviction_note": "The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale.",
+          "suggested_quantity": {
+            "min": 9,
+            "max": 32,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 32
+        },
+        {
+          "symbol": "ICICIBANK",
+          "opportunity_score": 82,
+          "confidence": 92,
+          "action": "accumulate",
+          "bull_case": "Solid Q4 PAT growth of 8% YoY with improving asset quality and strong institutional interest (block trades). Fundamental strength remains top-tier at 9.5/10.",
+          "bear_case": "Valuation is historically expensive, and a high-rate environment could compress net interest margins (NIMs) in the short term.",
+          "thesis": "ICICI Bank remains a market leader with robust asset quality. The sideways technical consolidation near 52-week highs offers a steady accumulation opportunity.",
+          "target_price": 1520.0,
+          "target_price_rationale": "8-10% upside based on steady earnings compounding and premium valuation retention.",
+          "near_term_outlook": "Expected to trade sideways to positive, tracking overall banking sector sentiment and RBI rate expectations.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Provides a highly stable, large-cap banking anchor to balance the portfolio's risk.",
+          "invalidation": "Net Interest Margin (NIM) compression exceeding 20 bps or a sharp rise in slippages.",
+          "key_risk": "Margin compression due to rising cost of deposits.",
+          "current_price": 1400.8,
+          "performance": {
+            "1w": {
+              "change_pct": -1.8,
+              "high": 1430.0,
+              "low": 1400.8
+            },
+            "1m": {
+              "change_pct": -2.01,
+              "high": 1454.0,
+              "low": 1400.8
+            },
+            "6m": {
+              "change_pct": 9.12,
+              "high": 1460.0,
+              "low": 1195.82
+            }
+          },
+          "risk_percent": 0,
+          "conviction": "HIGH",
+          "conviction_note": "The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale.",
+          "suggested_quantity": {
+            "min": 1,
+            "max": 5,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 5
+        },
+        {
+          "symbol": "MAXHEALTH",
+          "opportunity_score": 78,
+          "confidence": 88,
+          "action": "accumulate",
+          "bull_case": "Strong fundamental score of 9.5/10 with historically cheap valuations. Trading steadily near key support levels with positive analyst sentiment ahead of the ex-dividend date.",
+          "bear_case": "Sideways technical momentum (RSI 43) and potential regulatory pricing caps on healthcare services in India.",
+          "thesis": "Max Healthcare offers a defensive growth play at a reasonable valuation. Accumulating near support levels provides a favorable risk-reward ratio.",
+          "target_price": 1080.0,
+          "target_price_rationale": "Mean reversion to historical valuation multiples as bed capacity expansions go live.",
+          "near_term_outlook": "Likely to remain range-bound with a positive bias leading up to the ex-dividend date.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Diversifies the portfolio into the defensive Healthcare sector, mitigating financial sector concentration.",
+          "invalidation": "A decisive break below the \u20b9930 support level.",
+          "key_risk": "Regulatory interventions on hospital pricing or slower bed occupancy ramp-up.",
+          "current_price": 990.8,
+          "performance": {
+            "1w": {
+              "change_pct": -1.22,
+              "high": 1003.0,
+              "low": 984.8
+            },
+            "1m": {
+              "change_pct": -7.32,
+              "high": 1069.0,
+              "low": 984.8
+            },
+            "6m": {
+              "change_pct": -4.85,
+              "high": 1153.4,
+              "low": 929.95
+            }
+          },
+          "risk_percent": 0,
+          "conviction": "HIGH",
+          "conviction_note": "The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale.",
+          "suggested_quantity": {
+            "min": 2,
+            "max": 7,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 7
+        }
+      ],
+      "summary": "With the Nifty 50 sliding -0.6% today in an established short-term downtrend and annualized volatility sitting at 9.7%, defensive positioning and selective accumulation are key. We focus on high-quality names showing strong fundamental backstops and technical support. BEL offers a volume-backed recovery play, while JIOFIN presents an oversold value opportunity after stellar earnings. ICICI Bank remains a highly stable banking anchor, and Max Healthcare provides a defensive, support-level entry to navigate the broader market weakness.",
+      "capital_summary": {
+        "total_capital": 30000,
+        "total_allocated": 30000,
+        "cash_remaining": 0
+      }
+    }
+  },
+  "alert_text": "*AI Equity Analyst \u2014 Today's Shortlist*\n\n_\ud83d\udd25 HIGH CONVICTION = data lines up cleanly, worth acting on. \ud83d\udc40 LOW CONVICTION = a watch-list idea, treat with caution._\n\n1. *BEL*  \ud83d\udd25 HIGH CONVICTION  (opportunity 85/100, confidence 90%)\n   _The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale._\n   Stance: *ACCUMULATE*\n   Current price: \u20b9410.75\n   1w: +1.2% (high \u20b9410.75, low \u20b9404.00)\n   1m: +1.3% (high \u20b9414.45, low \u20b9404.00)\n   6m: -9.4% (high \u20b9462.12, low \u20b9384.38)\n   Risk: 0%\n   Bull case: Strong business quality with a 9.8 fundamental score and a technical recovery on high volume (1.8x). Earnings growth remains robust despite short-term margin pressures.\n   Bear case: Further margin contraction in upcoming quarters could delay recovery. Government spending delays in defense could impact order execution.\n   Near-term outlook: Likely to consolidate with an upward bias as the market digests the Q1 margin miss and focuses on the strong order pipeline.\n   Reference target: \u20b9450.00 \u2014 Rebound to previous highs as margins stabilize and order book execution accelerates.\n   Position-size cap: 5\u201318 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500 (~18 shares)\n   Portfolio fit: good \u2014 Fits well as the sole Industrials pick, balancing the heavy Financial Services tilt in the overall watchlist.\n   What would change this view: A break below the recent support of \u20b9384 or further deterioration in operating margins.\n   \u26a0 Key risk: Execution delays in key defense contracts.\n\n2. *JIOFIN*  \ud83d\udd25 HIGH CONVICTION  (opportunity 80/100, confidence 85%)\n   _The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale._\n   Stance: *ACCUMULATE*\n   Current price: \u20b9233.09\n   1w: -1.2% (high \u20b9239.50, low \u20b9233.09)\n   1m: -8.2% (high \u20b9256.05, low \u20b9233.09)\n   6m: -1.0% (high \u20b9264.38, low \u20b9223.58)\n   Risk: 10%\n   Bull case: Exceptional fundamental score (10/10) with cheap historical valuation and massive 121.7% YoY revenue growth in Q2 2026. Strong backing and capital base provide a long-term competitive moat.\n   Bear case: Technical momentum is weak (RSI 30) and the stock is in a clear downtrend. Regulatory changes or slower-than-expected rollouts of lending products could delay profitability.\n   Near-term outlook: May see base-building and sideways movement near \u20b9230 before technical indicators turn positive.\n   Reference target: \u20b9260.00 \u2014 Alignment with historical valuation averages and reflection of the strong Q2 earnings surge.\n   Position-size cap: 9\u201332 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500 (~32 shares)\n   Portfolio fit: good \u2014 Excellent addition to the Financial Services allocation, offering high-growth digital lending exposure.\n   What would change this view: A drop below \u20b9220 on high volume or deterioration in asset quality metrics in upcoming quarters.\n   \u26a0 Key risk: Prolonged technical weakness and slow credit off-take.\n\n3. *ICICIBANK*  \ud83d\udd25 HIGH CONVICTION  (opportunity 82/100, confidence 92%)\n   _The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale._\n   Stance: *ACCUMULATE*\n   Current price: \u20b91400.80\n   1w: -1.8% (high \u20b91430.00, low \u20b91400.80)\n   1m: -2.0% (high \u20b91454.00, low \u20b91400.80)\n   6m: +9.1% (high \u20b91460.00, low \u20b91195.82)\n   Risk: 0%\n   Bull case: Solid Q4 PAT growth of 8% YoY with improving asset quality and strong institutional interest (block trades). Fundamental strength remains top-tier at 9.5/10.\n   Bear case: Valuation is historically expensive, and a high-rate environment could compress net interest margins (NIMs) in the short term.\n   Near-term outlook: Expected to trade sideways to positive, tracking overall banking sector sentiment and RBI rate expectations.\n   Reference target: \u20b91520.00 \u2014 8-10% upside based on steady earnings compounding and premium valuation retention.\n   Position-size cap: 1\u20135 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500 (~5 shares)\n   Portfolio fit: good \u2014 Provides a highly stable, large-cap banking anchor to balance the portfolio's risk.\n   What would change this view: Net Interest Margin (NIM) compression exceeding 20 bps or a sharp rise in slippages.\n   \u26a0 Key risk: Margin compression due to rising cost of deposits.\n\n4. *MAXHEALTH*  \ud83d\udd25 HIGH CONVICTION  (opportunity 78/100, confidence 88%)\n   _The AI is fairly confident in this call \u2014 the data lines up cleanly and nothing here is flagged as thin or stale._\n   Stance: *ACCUMULATE*\n   Current price: \u20b9990.80\n   1w: -1.2% (high \u20b91003.00, low \u20b9984.80)\n   1m: -7.3% (high \u20b91069.00, low \u20b9984.80)\n   6m: -4.8% (high \u20b91153.40, low \u20b9929.95)\n   Risk: 0%\n   Bull case: Strong fundamental score of 9.5/10 with historically cheap valuations. Trading steadily near key support levels with positive analyst sentiment ahead of the ex-dividend date.\n   Bear case: Sideways technical momentum (RSI 43) and potential regulatory pricing caps on healthcare services in India.\n   Near-term outlook: Likely to remain range-bound with a positive bias leading up to the ex-dividend date.\n   Reference target: \u20b91080.00 \u2014 Mean reversion to historical valuation multiples as bed capacity expansions go live.\n   Position-size cap: 2\u20137 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500 (~7 shares)\n   Portfolio fit: good \u2014 Diversifies the portfolio into the defensive Healthcare sector, mitigating financial sector concentration.\n   What would change this view: A decisive break below the \u20b9930 support level.\n   \u26a0 Key risk: Regulatory interventions on hospital pricing or slower bed occupancy ramp-up.\n\n   Capital split: \u20b930,000 deployed of \u20b930,000 (\u20b90 left in cash)\n\n_With the Nifty 50 sliding -0.6% today in an established short-term downtrend and annualized volatility sitting at 9.7%, defensive positioning and selective accumulation are key. We focus on high-quality names showing strong fundamental backstops and technical support. BEL offers a volume-backed recovery play, while JIOFIN presents an oversold value opportunity after stellar earnings. ICICI Bank remains a highly stable banking anchor, and Max Healthcare provides a defensive, support-level entry to navigate the broader market weakness._\n\n\u26a0\ufe0f Not investment advice \u2014 AI-generated analysis for informational purposes only. Do your own research and consult a SEBI-registered advisor before investing.",
+  "bodhi_ran": false,
+  "bodhi_report": null,
+  "tv_symbols": [
+    "BEL",
+    "JIOFIN",
+    "ICICIBANK",
+    "MAXHEALTH"
+  ]
+}

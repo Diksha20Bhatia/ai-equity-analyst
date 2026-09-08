@@ -26,17 +26,20 @@ It walks through the whole morning routine, in order:
   8. Store today's scores into memory. Then, if BODHI_ENABLED=true, send
      today's real shortlist to a Bodhi workflow for risk verification and
      wait for its answer (see integrations/bodhi_risk_insights.py) — its
-     per-symbol verdict (if it returns one) is shown inline in the
-     Telegram alert, and any symbol it flags avoid/high-risk is left out
-     of the TradingView push (Telegram still shows every pick either way).
-     Finally: send the Telegram alert, (if TRADINGVIEW_WATCHLIST_ENABLED=
-     true) push the remaining shortlisted symbols into your real
-     TradingView watchlist, and write today's results as a new dated
-     sheet in output/portfolio_tracker.xlsx — see
-     alerts/tradingview_watchlist.py and alerts/excel_report.py. If Bodhi
-     is off, unreachable, or returns no parseable verdict, nothing is
-     filtered — every symbol goes to TradingView exactly as before this
-     integration existed.
+     per-symbol verdict (if it returns one) is included with the shortlist,
+     and any symbol it flags avoid/high-risk is excluded from the
+     TradingView candidate list. If Bodhi is off, unreachable, or returns
+     no parseable verdict, nothing is filtered — every symbol stays a
+     candidate exactly as before this integration existed. Today's results
+     are also written as a new dated sheet in output/portfolio_tracker.xlsx
+     (alerts/excel_report.py) — that's local record-keeping, not "sending
+     out" anything, so it always happens.
+  9. NOTHING is sent to Telegram or pushed to TradingView here. This
+     project hands out real financial recommendations, so the finished
+     shortlist is saved as a PENDING run (alerts/approval_gate.py) instead
+     — a real pause. Publishing is a separate, deliberate step a human has
+     to take against this specific run: `uv run python approve_run.py
+     --latest`, or the dashboard's "Review & Approve" section.
 
 To see how past picks have actually performed since they were listed,
 run tracker/price_tracker.py separately — a standalone tool that appends
@@ -64,7 +67,7 @@ from data import market_data, market_context
 from data.nse_universe import resolve_universe
 from memory.memory_layer import MemoryLayer
 from profile.profile_loader import load_profile
-from alerts import telegram_alert, tradingview_watchlist, excel_report
+from alerts import excel_report, approval_gate
 from integrations import bodhi_risk_insights
 
 from agents.research_agent import ResearchAgent
@@ -86,34 +89,16 @@ def banner(text):
 def main():
     banner("AI EQUITY ANALYST  —  daily run")
     print(f"Date        : {dt.date.today().isoformat()}")
-    if settings.use_bodhi_llm_gateway:
-        print(f"LLM backend : Bodhi LLM Gateway "
-              f"({'connected' if settings.bodhi_llm_gateway_token else 'NOT CONFIGURED'})")
-        print(f"Model       : {settings.bodhi_llm_model}")
-        if not settings.bodhi_llm_gateway_token:
-            raise RuntimeError(
-                "Bodhi LLM Gateway is not configured — set BODHI_LLM_GATEWAY_TOKEN "
-                "(and BODHI_LLM_TRACE_USER_ID) in .env, or set USE_BODHI_LLM_GATEWAY=false "
-                "to use Gemini instead."
-            )
-    else:
-        vertex_ready = bool(settings.google_cloud_project) and (
-            settings.google_auth_mode == "adc"
-            or (settings.google_auth_mode == "auto" and settings.google_genai_use_vertexai)
-        )
-        api_key_ready = bool(settings.google_api_key)
-        configured = vertex_ready or (settings.google_auth_mode != "adc" and api_key_ready)
-        mode_label = "adc/vertex" if vertex_ready else ("token/api_key" if api_key_ready else settings.google_auth_mode)
-        print(f"LLM backend : Google Gemini ({mode_label}) "
-              f"({'connected' if configured else 'NOT CONFIGURED'})")
-        print(f"Model       : {settings.google_model}")
-        if not configured:
-            raise RuntimeError(
-                "Gemini is not configured — set GOOGLE_API_KEY in .env (GOOGLE_AUTH_MODE=token), "
-                "or GOOGLE_CLOUD_PROJECT with GOOGLE_AUTH_MODE=adc for Vertex AI, "
-                "or set USE_BODHI_LLM_GATEWAY=true to route through Bodhi instead."
-            )
+    print(f"LLM backend : Bodhi LLM Gateway "
+          f"({'connected' if settings.bodhi_llm_gateway_token else 'NOT CONFIGURED'})")
+    print(f"Model       : {settings.bodhi_llm_model}")
     print(f"Tracing     : {'LangSmith (connected)' if observability.enabled else 'disabled (set LANGSMITH_API_KEY to enable)'}")
+
+    if not settings.bodhi_llm_gateway_token:
+        raise RuntimeError(
+            "Bodhi LLM Gateway is not configured — set BODHI_LLM_GATEWAY_TOKEN "
+            "(and BODHI_LLM_TRACE_USER_ID) in .env."
+        )
 
     # 1. Load profile + memory --------------------------------------------------
     profile = load_profile(settings.profile_path)
@@ -236,19 +221,34 @@ def main():
     banner("STEP 6 — Bodhi risk verification (optional)")
     bodhi_result = bodhi_risk_insights.verify_shortlist(results_by_tier, analyses)
 
-    alert = format_alert(results_by_tier, bodhi_result.get("verdicts"))
-    banner("STEP 7 — Final output")
-    telegram_alert.send(alert)
-    if bodhi_result["ran"]:
-        telegram_alert.send("*🧠 Bodhi Risk Insight — full report*\n\n" + bodhi_result["report"])
-
     # TradingView only gets symbols Bodhi didn't flag as avoid/high-risk.
     # If Bodhi didn't run (disabled, unreachable, or no verdict was found),
-    # flagged_symbols is empty and every shortlisted symbol still goes —
-    # unchanged from before this integration existed.
+    # flagged_symbols is empty and every shortlisted symbol is still a
+    # candidate — unchanged from before this integration existed.
     tv_symbols = [s for s in actions_by_symbol.keys() if s not in bodhi_result["flagged_symbols"]]
-    tradingview_watchlist.add_symbols(tv_symbols)
     excel_report.write_run(results_by_tier, analyses)
+
+    # STEP 7 — Pending approval, NOT auto-published --------------------------
+    # This project hands out real financial recommendations, so nothing is
+    # sent to Telegram or pushed to a live TradingView watchlist here. The
+    # finished shortlist is saved as a PENDING run — a real pause — and a
+    # human has to explicitly approve THIS specific run (approve_run.py, or
+    # the dashboard's "Review & Approve" section) before anything goes out.
+    # See alerts/approval_gate.py.
+    banner("STEP 7 — Saved for approval (not sent yet)")
+    alert = format_alert(results_by_tier, bodhi_result.get("verdicts"))
+    pending_path = approval_gate.save_pending({
+        "date": dt.date.today().isoformat(),
+        "results_by_tier": results_by_tier,
+        "alert_text": alert,
+        "bodhi_ran": bodhi_result["ran"],
+        "bodhi_report": bodhi_result.get("report"),
+        "tv_symbols": tv_symbols,
+    })
+    print(f"  Pending: {pending_path}")
+    print(f"  Nothing has been sent to Telegram or TradingView yet.")
+    print(f"  Review and approve with:  uv run python approve_run.py --latest")
+    print(f"  or reject with:           uv run python approve_run.py --latest --reject \"reason\"")
 
     # Save a copy to disk for your records (drop the raw price series first —
     # it's a pandas Series, not JSON-serialisable, and the dashboard/agents

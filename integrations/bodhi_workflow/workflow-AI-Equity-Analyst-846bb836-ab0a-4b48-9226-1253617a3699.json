@@ -1,7 +1,7 @@
 {
   "nodes": [
     {
-      "id": "d1",
+      "id": "01414015-7993-4c3b-9f94-3ba20a55b75c",
       "data": {
         "input": {
           "variables": [
@@ -45,14 +45,13 @@
         "auxiliaryHandlePosition": "bottom"
       },
       "type": "control-start",
-      "dragging": false,
       "measured": {
         "width": 32,
         "height": 32
       },
       "position": {
-        "x": 410,
-        "y": 60
+        "x": 60,
+        "y": 260
       },
       "selected": false,
       "deletable": false,
@@ -60,50 +59,7 @@
       "targetPosition": "left"
     },
     {
-      "id": "d2",
-      "data": {
-        "label": "End",
-        "output": {
-          "variables": [
-            {
-              "name": "result",
-              "type": "string",
-              "value": "{{Contrarian Agent[data.result.response]s}}"
-            }
-          ]
-        },
-        "variables": [
-          {
-            "name": "result",
-            "path": "result",
-            "type": "string",
-            "description": "Output Variable result of type string"
-          }
-        ],
-        "outputData": {
-          "data": {
-            "result": "{{Contrarian Agent[data.result.response]s}}"
-          }
-        },
-        "layoutDirection": "LR",
-        "auxiliaryHandlePosition": "bottom"
-      },
-      "type": "control-end",
-      "measured": {
-        "width": 32,
-        "height": 32
-      },
-      "position": {
-        "x": 1161,
-        "y": 62
-      },
-      "selected": false,
-      "deletable": false,
-      "sourcePosition": "right",
-      "targetPosition": "left"
-    },
-    {
-      "id": "8b9e6b7a-f063-494c-a002-551df28c6181",
+      "id": "1b24adf3-6531-433f-a62c-6ccb948ef78c",
       "data": {
         "input": {
           "name": "Risk Analyst Agent",
@@ -135,25 +91,23 @@
           }
         ],
         "layoutDirection": "LR",
-        "mcpToolsLastUpdated": 1787827737888,
         "auxiliaryHandlePosition": "bottom"
       },
       "type": "agent-custom",
-      "dragging": false,
       "measured": {
         "width": 199,
         "height": 62
       },
       "position": {
-        "x": 590,
-        "y": 40
+        "x": 280,
+        "y": 220
       },
       "selected": false,
       "sourcePosition": "right",
       "targetPosition": "left"
     },
     {
-      "id": "aee96568-2d8b-4aac-8dbc-c85c1a56ab85",
+      "id": "89363145-78a5-4d1b-90ea-7e1b81f71bf5",
       "data": {
         "input": {
           "tools": [
@@ -167,169 +121,15 @@
             "tools": [
               {
                 "name": "bodhi_deep_research-deep_research",
-                "_meta": {
-                  "_fastmcp": {
-                    "tags": []
-                  }
-                },
-                "description": "Conduct deep research on a given topic and generate a comprehensive report.\n\nThis tool uses an AI-powered research workflow that:\n1. Generates a research plan with multiple sections\n2. Performs web searches to gather information\n3. Writes detailed sections based on research findings\n4. Compiles a final comprehensive report\n\nThe tool supports various configuration options for customization.\n\nArgs:\n    topic: The research topic or question to investigate (required)\n    instruction_img: Optional list of image file paths for vision-based instructions\n    report_structure: Structure template for the report. Defaults to standard structure if not provided.\n    json_report_format: Optional JSON string defining custom report structure. When provided, the report will be generated according to this structure and returned as JSON. If empty, uses default text format. See README for format specification.\n    json_format_mode: Mode for JSON format validation. 'flexible' (default) allows custom JSON structures and normalizes partial/malformed input. 'strict' enforces the full JsonReportFormat schema. Only applies when json_report_format is provided.\n    search_api: Search API to use: 'tavily', 'arxiv', 'reddit', 'rag', 'google'. For multiple APIs, use comma-separated values. Default: 'tavily'. Note: When using 'rag', it will ONLY search your local files in the ASK_BODHI vector database service using the provided Collection Name - no internet searches will be performed. RAG cannot be combined with other search APIs.\n    search_api_config: Configuration dictionary for the search API (e.g., API keys, parameters). Pass as JSON string (e.g., '{\"api_key\": \"value\"}') or leave empty. For RAG mode, you can optionally provide additional search parameters here (e.g., '{\"search_params\": {\"size\": 10}}'). Note: collection_name should be provided as a top-level parameter when using RAG mode.\n    collection_name: Collection name from ASK_BODHI when using RAG mode (search_api='rag'). Required when search_api='rag'. This is the name of the vector database collection containing your uploaded local files.\n    number_of_queries: Number of search queries to generate per iteration. Default: 2\n    max_search_depth: Maximum number of reflection + search iterations. Default: 2\n    human_feedback: Enable human feedback on report plan. Default: true\n    planner_provider: LLM provider for planning (e.g., 'openai'). Default: 'openai'\n    planner_model: Model name for planning. Default: 'gpt-4.1'\n    planner_model_kwargs: Additional keyword arguments for the planner model. Pass as JSON string (e.g., '{\"temperature\": 0.7}') or leave empty.\n    writer_provider: LLM provider for writing (e.g., 'openai'). Default: 'openai'\n    writer_model: Model name for writing. Default: 'gpt-4.1'\n    writer_model_kwargs: Additional keyword arguments for the writer model. Pass as JSON string (e.g., '{\"temperature\": 0.7}') or leave empty.\n    urls: Optional list of URLs or domains to restrict research to.\n    url_mode: 'domain' uses Google search filtered to domains (default), 'scrape' limits scraping to the provided URLs. Must be 'domain' or 'scrape'.\n\nReturns:\n    A comprehensive research report as a string (or JSON string if json_report_format is provided).",
+                "description": "Conduct deep research on a given topic and generate a comprehensive report.",
                 "inputSchema": {
                   "type": "object",
                   "required": [
                     "topic"
                   ],
                   "properties": {
-                    "urls": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
                     "topic": {
                       "type": "string"
-                    },
-                    "url_mode": {
-                      "enum": [
-                        "domain",
-                        "scrape"
-                      ],
-                      "type": "string",
-                      "default": "domain"
-                    },
-                    "search_api": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
-                    "writer_model": {
-                      "type": "string",
-                      "default": "gpt-4.1"
-                    },
-                    "planner_model": {
-                      "type": "string",
-                      "default": "gpt-4.1"
-                    },
-                    "human_feedback": {
-                      "type": "boolean",
-                      "default": true
-                    },
-                    "collection_name": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
-                    "instruction_img": {
-                      "anyOf": [
-                        {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
-                    "writer_provider": {
-                      "type": "string",
-                      "default": "openai"
-                    },
-                    "json_format_mode": {
-                      "enum": [
-                        "strict",
-                        "flexible"
-                      ],
-                      "type": "string",
-                      "default": "flexible"
-                    },
-                    "max_search_depth": {
-                      "type": "integer",
-                      "default": 2
-                    },
-                    "planner_provider": {
-                      "type": "string",
-                      "default": "openai"
-                    },
-                    "report_structure": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
-                    "number_of_queries": {
-                      "type": "integer",
-                      "default": 2
-                    },
-                    "search_api_config": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
-                    "json_report_format": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
-                    "writer_model_kwargs": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
-                    },
-                    "planner_model_kwargs": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ],
-                      "default": null
                     }
                   }
                 },
@@ -355,30 +155,27 @@
             "transport": "http"
           },
           "serverName": "bodhi-deep-research",
-          "toolsConfig": "{\"env\":{},\"url\":\"https://bodhi-mcp.sandbox.psbodhi.live/mcp/bodhi_deep_research\",\"args\":[],\"name\":\"bodhi-deep-research\",\"tools\":[{\"name\":\"bodhi_deep_research-deep_research\",\"description\":\"Conduct deep research on a given topic and generate a comprehensive report.\\n\\nThis tool uses an AI-powered research workflow that:\\n1. Generates a research plan with multiple sections\\n2. Performs web searches to gather information\\n3. Writes detailed sections based on research findings\\n4. Compiles a final comprehensive report\\n\\nThe tool supports various configuration options for customization.\\n\\nArgs:\\n    topic: The research topic or question to investigate (required)\\n    instruction_img: Optional list of image file paths for vision-based instructions\\n    report_structure: Structure template for the report. Defaults to standard structure if not provided.\\n    json_report_format: Optional JSON string defining custom report structure. When provided, the report will be generated according to this structure and returned as JSON. If empty, uses default text format. See README for format specification.\\n    json_format_mode: Mode for JSON format validation. 'flexible' (default) allows custom JSON structures and normalizes partial/malformed input. 'strict' enforces the full JsonReportFormat schema. Only applies when json_report_format is provided.\\n    search_api: Search API to use: 'tavily', 'arxiv', 'reddit', 'rag', 'google'. For multiple APIs, use comma-separated values. Default: 'tavily'. Note: When using 'rag', it will ONLY search your local files in the ASK_BODHI vector database service using the provided Collection Name - no internet searches will be performed. RAG cannot be combined with other search APIs.\\n    search_api_config: Configuration dictionary for the search API (e.g., API keys, parameters). Pass as JSON string (e.g., '{\\\"api_key\\\": \\\"value\\\"}') or leave empty. For RAG mode, you can optionally provide additional search parameters here (e.g., '{\\\"search_params\\\": {\\\"size\\\": 10}}'). Note: collection_name should be provided as a top-level parameter when using RAG mode.\\n    collection_name: Collection name from ASK_BODHI when using RAG mode (search_api='rag'). Required when search_api='rag'. This is the name of the vector database collection containing your uploaded local files.\\n    number_of_queries: Number of search queries to generate per iteration. Default: 2\\n    max_search_depth: Maximum number of reflection + search iterations. Default: 2\\n    human_feedback: Enable human feedback on report plan. Default: true\\n    planner_provider: LLM provider for planning (e.g., 'openai'). Default: 'openai'\\n    planner_model: Model name for planning. Default: 'gpt-4.1'\\n    planner_model_kwargs: Additional keyword arguments for the planner model. Pass as JSON string (e.g., '{\\\"temperature\\\": 0.7}') or leave empty.\\n    writer_provider: LLM provider for writing (e.g., 'openai'). Default: 'openai'\\n    writer_model: Model name for writing. Default: 'gpt-4.1'\\n    writer_model_kwargs: Additional keyword arguments for the writer model. Pass as JSON string (e.g., '{\\\"temperature\\\": 0.7}') or leave empty.\\n    urls: Optional list of URLs or domains to restrict research to.\\n    url_mode: 'domain' uses Google search filtered to domains (default), 'scrape' limits scraping to the provided URLs. Must be 'domain' or 'scrape'.\\n\\nReturns:\\n    A comprehensive research report as a string (or JSON string if json_report_format is provided).\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"topic\":{\"type\":\"string\"},\"instruction_img\":{\"anyOf\":[{\"items\":{\"type\":\"string\"},\"type\":\"array\"},{\"type\":\"null\"}],\"default\":null},\"report_structure\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null},\"json_report_format\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null},\"json_format_mode\":{\"default\":\"flexible\",\"enum\":[\"strict\",\"flexible\"],\"type\":\"string\"},\"search_api\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null},\"search_api_config\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null},\"collection_name\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null},\"number_of_queries\":{\"default\":2,\"type\":\"integer\"},\"max_search_depth\":{\"default\":2,\"type\":\"integer\"},\"human_feedback\":{\"default\":true,\"type\":\"boolean\"},\"planner_provider\":{\"default\":\"openai\",\"type\":\"string\"},\"planner_model\":{\"default\":\"gpt-4.1\",\"type\":\"string\"},\"planner_model_kwargs\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null},\"writer_provider\":{\"default\":\"openai\",\"type\":\"string\"},\"writer_model\":{\"default\":\"gpt-4.1\",\"type\":\"string\"},\"writer_model_kwargs\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null},\"urls\":{\"anyOf\":[{\"items\":{\"type\":\"string\"},\"type\":\"array\"},{\"type\":\"null\"}],\"default\":null},\"url_mode\":{\"default\":\"domain\",\"enum\":[\"domain\",\"scrape\"],\"type\":\"string\"}},\"required\":[\"topic\"]},\"outputSchema\":{\"type\":\"object\",\"properties\":{\"result\":{\"type\":\"string\"}},\"required\":[\"result\"],\"x-fastmcp-wrap-result\":true},\"_meta\":{\"_fastmcp\":{\"tags\":[]}}}],\"authKey\":\"\",\"command\":\"\",\"headers\":{\"authorization\":\"Bearer {{$context[access_token]}}\"},\"transport\":\"http\"}",
           "selectedCredentialId": null
         },
         "label": "bodhi-deep-research",
-        "lastUpdated": 1787827737888,
         "layoutDirection": "LR",
         "auxiliaryHandlePosition": "bottom"
       },
       "type": "mcp-tools",
-      "dragging": false,
       "measured": {
         "width": 201,
         "height": 54
       },
       "position": {
-        "x": 594,
-        "y": 186
+        "x": 284,
+        "y": 366
       },
       "selected": false,
       "sourcePosition": "right",
       "targetPosition": "left"
     },
     {
-      "id": "44f0e5d0-a0ca-45cd-9676-caf6f2f96aa1",
+      "id": "90422cbe-12b0-48b4-8908-5d907fe51596",
       "data": {
         "input": {
           "name": "Contrarian Agent",
@@ -388,7 +185,7 @@
           "showPlan": false,
           "userquery": "Perform your challenge and produce the verdicts JSON now, following the instructions above.",
           "description": "agent description...",
-          "systemPrompt": "You are a Contrarian Agent — a red-team reviewer challenging a Risk Analyst's assessment before it decides what goes on a live trading watchlist.\nRisk Analyst's assessment:\n{{Risk Analyst Agent[data.result.response]}}\nOriginal portfolio (for the full list of symbols you must return a verdict for):\n{{UI Node[data.response[\"Investmentportfolio\"]]o}}\nChallenge the Risk Analyst's key claims — is each risk current and specific to that stock, or generic/stale? Flag anything a risk-aware investor should treat as a real red flag right now. Where concerns are minor or already priced in, say so — don't manufacture risk.\nEnd your answer with ONLY this JSON, one entry per stock in the portfolio, nothing after it:\n{\"verdicts\": [{\"symbol\": \"...\", \"verdict\": \"clear\" | \"caution\" | \"avoid\", \"notes\": \"one or two sentences, cite the specific reason\"}]}\n",
+          "systemPrompt": "You are a Contrarian Agent — a red-team reviewer challenging a Risk Analyst's assessment before it decides what goes on a live trading watchlist.\nRisk Analyst's assessment:\n{{Risk Analyst Agent[data.result.response]}}\nOriginal portfolio (for the full list of symbols you must return a verdict for):\n{{$var[Investmentportfolio]o}}\nChallenge the Risk Analyst's key claims — is each risk current and specific to that stock, or generic/stale? Flag anything a risk-aware investor should treat as a real red flag right now. Where concerns are minor or already priced in, say so — don't manufacture risk.\nEnd your answer with ONLY this JSON, one entry per stock in the portfolio, nothing after it. Output the raw JSON object directly — do NOT wrap it in a markdown code fence, do NOT use triple backticks anywhere in your answer, start your answer with { and end it with }, nothing else before or after:\n{\"verdicts\": [{\"symbol\": \"...\", \"verdict\": \"clear\" | \"caution\" | \"avoid\", \"notes\": \"one or two sentences, cite the specific reason\"}]}\n",
           "default_tools": [],
           "guardrailChecks": [],
           "roleDescription": "",
@@ -404,8 +201,8 @@
         "variables": [
           {
             "name": "response",
-            "path": "data.result.response",
             "type": "string",
+            "path": "data.result.response",
             "description": "agent response text"
           }
         ],
@@ -413,51 +210,509 @@
         "auxiliaryHandlePosition": "bottom"
       },
       "type": "agent-custom",
-      "dragging": false,
       "measured": {
         "width": 188,
         "height": 62
       },
       "position": {
-        "x": 890,
-        "y": 40
+        "x": 560,
+        "y": 220
       },
       "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "e0b2699b-5a06-4e5f-b5a3-20cc536f3b84",
+      "data": {
+        "input": {
+          "variableName": "needs_escalation",
+          "expression": "(function() {\n  const raw = {{Contrarian Agent[data.result.response]}};\n  if (raw.includes('\"caution\"') || raw.includes('\"avoid\"')) {\n    return 'true';\n  }\n  return 'false';\n})()"
+        },
+        "label": "Set Extract Escalation Flag",
+        "output": {
+          "data": {
+            "needs_escalation": "",
+            "flagged_symbols": "",
+            "flagged_notes": ""
+          }
+        },
+        "variables": [
+          {
+            "name": "needs_escalation",
+            "path": "data.response[\"needs_escalation\"]",
+            "type": "string",
+            "description": "",
+            "default": ""
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "set-variable",
+      "measured": {
+        "width": 240,
+        "height": 62
+      },
+      "position": {
+        "x": 830,
+        "y": 220
+      },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "01bd46e4-8227-463d-a3c8-855feb59be47",
+      "data": {
+        "input": {
+          "condition": "{{Set Extract Escalation Flag[data.needs_escalation]}} === \"true\""
+        },
+        "label": "Needs Escalation",
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "if-else",
+      "measured": {
+        "width": 100,
+        "height": 75
+      },
+      "position": {
+        "x": 1110,
+        "y": 220
+      },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left",
+      "width": 100,
+      "height": 75
+    },
+    {
+      "id": "e739a7fc-843c-43cc-8cab-ce0e65b6c187",
+      "data": {
+        "input": {
+          "name": "Escalation Analyst",
+          "role": "default",
+          "model": "claude-sonnet-4-5@20250929",
+          "skills": [],
+          "showPlan": false,
+          "userquery": "Run the deeper review now and produce the final verdicts JSON, following the instructions above.",
+          "description": "agent description...",
+          "systemPrompt": "You are the Escalation Analyst — a deeper, second-pass review that only runs when the Contrarian Agent already flagged real concerns. Do not repeat the first two passes' generic commentary.\n\nThe Contrarian Agent's full review — find the symbols marked \"caution\" or \"avoid\"; those are the ones you must investigate. Ignore any symbol marked \"clear\":\\n{{Contrarian Agent[data.result.response]}}\n\nOriginal portfolio:\n{{$var[Investmentportfolio]o}}\n\nInvestigate ONLY the flagged symbols above, in more depth than the earlier passes — look specifically for whether the flagged concern is still live right now, or already resolved/priced in. Give each flagged symbol a FINAL verdict that supersedes the Contrarian's — you have the deciding word.\n\nEnd your answer with ONLY this JSON, one entry per FLAGGED symbol, nothing after it. Output the raw JSON object directly — do NOT wrap it in a markdown code fence, do NOT use triple backticks anywhere in your answer, start your answer with { and end it with }, nothing else before or after:\n{\"verdicts\": [{\"symbol\": \"...\", \"verdict\": \"clear\" | \"caution\" | \"avoid\", \"notes\": \"one or two sentences, cite what changed or was confirmed\"}]}\n",
+          "default_tools": [],
+          "guardrailChecks": [],
+          "roleDescription": "",
+          "selectedPersonaId": "",
+          "selectedSourceSetIds": []
+        },
+        "label": "Escalation Analyst",
+        "output": {
+          "response": {
+            "output": ""
+          }
+        },
+        "variables": [
+          {
+            "name": "response",
+            "type": "string",
+            "path": "data.result.response",
+            "description": "agent response text"
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom",
+        "mcpToolsLastUpdated": 1788857856626
+      },
+      "type": "agent-custom",
+      "measured": {
+        "width": 197,
+        "height": 62
+      },
+      "position": {
+        "x": 1360,
+        "y": 100
+      },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "9a02412e-3100-41d8-a240-4d04b8058ec0",
+      "data": {
+        "input": {
+          "tools": [
+            "bodhi_deep_research-deep_research"
+          ],
+          "server": {
+            "env": {},
+            "url": "https://bodhi-mcp.sandbox.psbodhi.live/mcp/bodhi_deep_research",
+            "args": [],
+            "name": "bodhi-deep-research",
+            "tools": [
+              {
+                "name": "bodhi_deep_research-deep_research",
+                "description": "Conduct deep research on a given topic and generate a comprehensive report.\n\nThis tool uses an AI-powered research workflow that:\n1. Generates a research plan with multiple sections\n2. Performs web searches to gather information\n3. Writes detailed sections based on research findings\n4. Compiles a final comprehensive report\n\nThe tool supports various configuration options for customization.\n\nArgs:\n    topic: The research topic or question to investigate (required)\n    instruction_img: Optional list of image file paths for vision-based instructions\n    report_structure: Structure template for the report. Defaults to standard structure if not provided.\n    json_report_format: Optional JSON string defining custom report structure. When provided, the report will be generated according to this structure and returned as JSON. If empty, uses default text format. See README for format specification.\n    json_format_mode: Mode for JSON format validation. 'flexible' (default) allows custom JSON structures and normalizes partial/malformed input. 'strict' enforces the full JsonReportFormat schema. Only applies when json_report_format is provided.\n    search_api: Search API to use: 'tavily', 'arxiv', 'reddit', 'rag', 'google'. For multiple APIs, use comma-separated values. Default: 'tavily'. Note: When using 'rag', it will ONLY search your local files in the ASK_BODHI vector database service using the provided Collection Name - no internet searches will be performed. RAG cannot be combined with other search APIs.\n    search_api_config: Configuration dictionary for the search API (e.g., API keys, parameters). Pass as JSON string (e.g., '{\"api_key\": \"value\"}') or leave empty. For RAG mode, you can optionally provide additional search parameters here (e.g., '{\"search_params\": {\"size\": 10}}'). Note: collection_name should be provided as a top-level parameter when using RAG mode.\n    collection_name: Collection name from ASK_BODHI when using RAG mode (search_api='rag'). Required when search_api='rag'. This is the name of the vector database collection containing your uploaded local files.\n    number_of_queries: Number of search queries to generate per iteration. Default: 2\n    max_search_depth: Maximum number of reflection + search iterations. Default: 2\n    human_feedback: Enable human feedback on report plan. Default: true\n    planner_provider: LLM provider for planning (e.g., 'openai'). Default: 'openai'\n    planner_model: Model name for planning. Default: 'gpt-4.1'\n    planner_model_kwargs: Additional keyword arguments for the planner model. Pass as JSON string (e.g., '{\"temperature\": 0.7}') or leave empty.\n    writer_provider: LLM provider for writing (e.g., 'openai'). Default: 'openai'\n    writer_model: Model name for writing. Default: 'gpt-4.1'\n    writer_model_kwargs: Additional keyword arguments for the writer model. Pass as JSON string (e.g., '{\"temperature\": 0.7}') or leave empty.\n    urls: Optional list of URLs or domains to restrict research to.\n    url_mode: 'domain' uses Google search filtered to domains (default), 'scrape' limits scraping to the provided URLs. Must be 'domain' or 'scrape'.\n\nReturns:\n    A comprehensive research report as a string (or JSON string if json_report_format is provided).",
+                "inputSchema": {
+                  "type": "object",
+                  "properties": {
+                    "topic": {
+                      "type": "string"
+                    },
+                    "instruction_img": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "report_structure": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "json_report_format": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "json_format_mode": {
+                      "default": "flexible",
+                      "enum": [
+                        "strict",
+                        "flexible"
+                      ],
+                      "type": "string"
+                    },
+                    "search_api": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "search_api_config": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "collection_name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "number_of_queries": {
+                      "default": 2,
+                      "type": "integer"
+                    },
+                    "max_search_depth": {
+                      "default": 2,
+                      "type": "integer"
+                    },
+                    "human_feedback": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "planner_provider": {
+                      "default": "openai",
+                      "type": "string"
+                    },
+                    "planner_model": {
+                      "default": "gpt-4.1",
+                      "type": "string"
+                    },
+                    "planner_model_kwargs": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "writer_provider": {
+                      "default": "openai",
+                      "type": "string"
+                    },
+                    "writer_model": {
+                      "default": "gpt-4.1",
+                      "type": "string"
+                    },
+                    "writer_model_kwargs": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "urls": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "url_mode": {
+                      "default": "domain",
+                      "enum": [
+                        "domain",
+                        "scrape"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "topic"
+                  ]
+                },
+                "outputSchema": {
+                  "type": "object",
+                  "properties": {
+                    "result": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "result"
+                  ],
+                  "x-fastmcp-wrap-result": true
+                },
+                "_meta": {
+                  "_fastmcp": {
+                    "tags": []
+                  }
+                }
+              }
+            ],
+            "authKey": "",
+            "command": "",
+            "headers": {
+              "authorization": "Bearer {{$context[access_token]}}"
+            },
+            "transport": "http"
+          },
+          "serverName": "bodhi-deep-research",
+          "selectedCredentialId": null,
+          "toolsConfig": "{\n  \"env\": {},\n  \"url\": \"https://bodhi-mcp.sandbox.psbodhi.live/mcp/bodhi_deep_research\",\n  \"args\": [],\n  \"name\": \"bodhi-deep-research\",\n  \"tools\": [\n    {\n      \"name\": \"bodhi_deep_research-deep_research\",\n      \"description\": \"Conduct deep research on a given topic and generate a comprehensive report.\\n\\nThis tool uses an AI-powered research workflow that:\\n1. Generates a research plan with multiple sections\\n2. Performs web searches to gather information\\n3. Writes detailed sections based on research findings\\n4. Compiles a final comprehensive report\\n\\nThe tool supports various configuration options for customization.\\n\\nArgs:\\n    topic: The research topic or question to investigate (required)\\n    instruction_img: Optional list of image file paths for vision-based instructions\\n    report_structure: Structure template for the report. Defaults to standard structure if not provided.\\n    json_report_format: Optional JSON string defining custom report structure. When provided, the report will be generated according to this structure and returned as JSON. If empty, uses default text format. See README for format specification.\\n    json_format_mode: Mode for JSON format validation. 'flexible' (default) allows custom JSON structures and normalizes partial/malformed input. 'strict' enforces the full JsonReportFormat schema. Only applies when json_report_format is provided.\\n    search_api: Search API to use: 'tavily', 'arxiv', 'reddit', 'rag', 'google'. For multiple APIs, use comma-separated values. Default: 'tavily'. Note: When using 'rag', it will ONLY search your local files in the ASK_BODHI vector database service using the provided Collection Name - no internet searches will be performed. RAG cannot be combined with other search APIs.\\n    search_api_config: Configuration dictionary for the search API (e.g., API keys, parameters). Pass as JSON string (e.g., '{\\\"api_key\\\": \\\"value\\\"}') or leave empty. For RAG mode, you can optionally provide additional search parameters here (e.g., '{\\\"search_params\\\": {\\\"size\\\": 10}}'). Note: collection_name should be provided as a top-level parameter when using RAG mode.\\n    collection_name: Collection name from ASK_BODHI when using RAG mode (search_api='rag'). Required when search_api='rag'. This is the name of the vector database collection containing your uploaded local files.\\n    number_of_queries: Number of search queries to generate per iteration. Default: 2\\n    max_search_depth: Maximum number of reflection + search iterations. Default: 2\\n    human_feedback: Enable human feedback on report plan. Default: true\\n    planner_provider: LLM provider for planning (e.g., 'openai'). Default: 'openai'\\n    planner_model: Model name for planning. Default: 'gpt-4.1'\\n    planner_model_kwargs: Additional keyword arguments for the planner model. Pass as JSON string (e.g., '{\\\"temperature\\\": 0.7}') or leave empty.\\n    writer_provider: LLM provider for writing (e.g., 'openai'). Default: 'openai'\\n    writer_model: Model name for writing. Default: 'gpt-4.1'\\n    writer_model_kwargs: Additional keyword arguments for the writer model. Pass as JSON string (e.g., '{\\\"temperature\\\": 0.7}') or leave empty.\\n    urls: Optional list of URLs or domains to restrict research to.\\n    url_mode: 'domain' uses Google search filtered to domains (default), 'scrape' limits scraping to the provided URLs. Must be 'domain' or 'scrape'.\\n\\nReturns:\\n    A comprehensive research report as a string (or JSON string if json_report_format is provided).\",\n      \"inputSchema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"topic\": {\n            \"type\": \"string\"\n          },\n          \"instruction_img\": {\n            \"anyOf\": [\n              {\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"type\": \"array\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"report_structure\": {\n            \"anyOf\": [\n              {\n                \"type\": \"string\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"json_report_format\": {\n            \"anyOf\": [\n              {\n                \"type\": \"string\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"json_format_mode\": {\n            \"default\": \"flexible\",\n            \"enum\": [\n              \"strict\",\n              \"flexible\"\n            ],\n            \"type\": \"string\"\n          },\n          \"search_api\": {\n            \"anyOf\": [\n              {\n                \"type\": \"string\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"search_api_config\": {\n            \"anyOf\": [\n              {\n                \"type\": \"string\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"collection_name\": {\n            \"anyOf\": [\n              {\n                \"type\": \"string\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"number_of_queries\": {\n            \"default\": 2,\n            \"type\": \"integer\"\n          },\n          \"max_search_depth\": {\n            \"default\": 2,\n            \"type\": \"integer\"\n          },\n          \"human_feedback\": {\n            \"default\": true,\n            \"type\": \"boolean\"\n          },\n          \"planner_provider\": {\n            \"default\": \"openai\",\n            \"type\": \"string\"\n          },\n          \"planner_model\": {\n            \"default\": \"gpt-4.1\",\n            \"type\": \"string\"\n          },\n          \"planner_model_kwargs\": {\n            \"anyOf\": [\n              {\n                \"type\": \"string\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"writer_provider\": {\n            \"default\": \"openai\",\n            \"type\": \"string\"\n          },\n          \"writer_model\": {\n            \"default\": \"gpt-4.1\",\n            \"type\": \"string\"\n          },\n          \"writer_model_kwargs\": {\n            \"anyOf\": [\n              {\n                \"type\": \"string\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"urls\": {\n            \"anyOf\": [\n              {\n                \"items\": {\n                  \"type\": \"string\"\n                },\n                \"type\": \"array\"\n              },\n              {\n                \"type\": \"null\"\n              }\n            ],\n            \"default\": null\n          },\n          \"url_mode\": {\n            \"default\": \"domain\",\n            \"enum\": [\n              \"domain\",\n              \"scrape\"\n            ],\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"topic\"\n        ]\n      },\n      \"outputSchema\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"result\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"result\"\n        ],\n        \"x-fastmcp-wrap-result\": true\n      },\n      \"_meta\": {\n        \"_fastmcp\": {\n          \"tags\": []\n        }\n      }\n    }\n  ],\n  \"authKey\": \"\",\n  \"command\": \"\",\n  \"headers\": {\n    \"authorization\": \"Bearer {{$context[access_token]}}\"\n  },\n  \"transport\": \"http\"\n}"
+        },
+        "label": "bodhi-deep-research",
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom",
+        "lastUpdated": 1788857856626
+      },
+      "type": "mcp-tools",
+      "measured": {
+        "width": 201,
+        "height": 54
+      },
+      "position": {
+        "x": 1364,
+        "y": 20
+      },
+      "selected": true,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "d87ae016-7e81-4c5d-ade0-1de3a2bfe078",
+      "data": {
+        "input": {
+          "variableName": "final_verdicts",
+          "expression": "(function() {\n  const escalated = {{Escalation Analyst[data.result.response]}};\n  const original = {{Contrarian Agent[data.result.response]}};\n  if (escalated && escalated.length > 0) {\n    return escalated;\n  }\n  return original;\n})()"
+        },
+        "label": "Set Combine Final Verdict",
+        "output": {
+          "data": {
+            "final_verdicts": ""
+          }
+        },
+        "variables": [
+          {
+            "name": "final_verdicts",
+            "path": "data.response[\"final_verdicts\"]",
+            "type": "string",
+            "description": "",
+            "default": ""
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "set-variable",
+      "measured": {
+        "width": 240,
+        "height": 62
+      },
+      "position": {
+        "x": 1620,
+        "y": 220
+      },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "5e7242d6-97bd-45b0-9dc9-1b1c65bc812f",
+      "data": {
+        "label": "End",
+        "output": {
+          "variables": [
+            {
+              "name": "result",
+              "type": "string",
+              "value": "{{Set Combine Final Verdict[data.final_verdicts]}}"
+            }
+          ]
+        },
+        "variables": [
+          {
+            "name": "result",
+            "path": "result",
+            "type": "string",
+            "description": "Output Variable result of type string"
+          }
+        ],
+        "outputData": {
+          "data": {
+            "result": "{{Set Combine Final Verdict[data.final_verdicts]}}"
+          }
+        },
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "control-end",
+      "measured": {
+        "width": 32,
+        "height": 32
+      },
+      "position": {
+        "x": 1900,
+        "y": 240
+      },
+      "selected": false,
+      "deletable": false,
       "sourcePosition": "right",
       "targetPosition": "left"
     }
   ],
   "edges": [
     {
-      "id": "38af75eb-568c-4691-87fa-c3e2692b7da3",
+      "id": "e-start-risk",
       "type": "add-edge",
-      "source": "aee96568-2d8b-4aac-8dbc-c85c1a56ab85",
-      "target": "8b9e6b7a-f063-494c-a002-551df28c6181",
+      "source": "01414015-7993-4c3b-9f94-3ba20a55b75c",
+      "target": "1b24adf3-6531-433f-a62c-6ccb948ef78c"
+    },
+    {
+      "id": "e-mcp-risk",
+      "type": "add-edge",
+      "source": "89363145-78a5-4d1b-90ea-7e1b81f71bf5",
+      "target": "1b24adf3-6531-433f-a62c-6ccb948ef78c",
       "sourceHandle": "output",
       "targetHandle": "tools"
     },
     {
-      "id": "06edef26-98e6-43dc-b1b2-ce9b6b9f5392",
+      "id": "e-risk-contrarian",
       "type": "add-edge",
-      "source": "8b9e6b7a-f063-494c-a002-551df28c6181",
-      "target": "44f0e5d0-a0ca-45cd-9676-caf6f2f96aa1"
+      "source": "1b24adf3-6531-433f-a62c-6ccb948ef78c",
+      "target": "90422cbe-12b0-48b4-8908-5d907fe51596"
     },
     {
-      "id": "6fa8a600-ce0c-4d55-99e0-93a664bdc562",
+      "id": "e-contrarian-set",
       "type": "add-edge",
-      "source": "44f0e5d0-a0ca-45cd-9676-caf6f2f96aa1",
-      "target": "d2"
+      "source": "90422cbe-12b0-48b4-8908-5d907fe51596",
+      "target": "e0b2699b-5a06-4e5f-b5a3-20cc536f3b84"
     },
     {
-      "id": "d1->8b9e6b7a-f063-494c-a002-551df28c6181",
+      "id": "e-set-if",
       "type": "add-edge",
-      "source": "d1",
-      "target": "8b9e6b7a-f063-494c-a002-551df28c6181"
+      "source": "e0b2699b-5a06-4e5f-b5a3-20cc536f3b84",
+      "target": "01bd46e4-8227-463d-a3c8-855feb59be47"
+    },
+    {
+      "id": "e-if-true-escalate",
+      "type": "add-edge",
+      "source": "01bd46e4-8227-463d-a3c8-855feb59be47",
+      "target": "e739a7fc-843c-43cc-8cab-ce0e65b6c187",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "e-mcp-escalation",
+      "type": "add-edge",
+      "source": "9a02412e-3100-41d8-a240-4d04b8058ec0",
+      "target": "e739a7fc-843c-43cc-8cab-ce0e65b6c187",
+      "sourceHandle": "output",
+      "targetHandle": "tools"
+    },
+    {
+      "id": "e-if-false-combine",
+      "type": "add-edge",
+      "source": "01bd46e4-8227-463d-a3c8-855feb59be47",
+      "target": "d87ae016-7e81-4c5d-ade0-1de3a2bfe078",
+      "sourceHandle": "false"
+    },
+    {
+      "id": "e-escalation-combine",
+      "type": "add-edge",
+      "source": "e739a7fc-843c-43cc-8cab-ce0e65b6c187",
+      "target": "d87ae016-7e81-4c5d-ade0-1de3a2bfe078"
+    },
+    {
+      "id": "e-combine-end",
+      "type": "add-edge",
+      "source": "d87ae016-7e81-4c5d-ade0-1de3a2bfe078",
+      "target": "5e7242d6-97bd-45b0-9dc9-1b1c65bc812f"
     }
   ],
   "viewport": {
-    "x": 290.5603573375281,
-    "y": 288.83639769857524,
-    "zoom": 0.8726650586574002
+    "x": 217.99707485171234,
+    "y": 244.7388779363146,
+    "zoom": 0.49533672084157576
   }
 }
