@@ -34,7 +34,7 @@ flowchart TB
         NSE["NSE India<br/>official stock lists"]
     end
 
-    subgraph Team["The Research Team — 10 specialists"]
+    subgraph Team["The Research Team — 11 specialists"]
         Calc["5 Calculators<br/>pure maths, zero AI cost"]
         Think["5 Thinkers<br/>use Bodhi's LLM Gateway"]
     end
@@ -47,13 +47,13 @@ flowchart TB
     Inputs --> Calc --> Think --> Outputs
 ```
 
-**The key design decision, and why it matters commercially:** only **5 of the 10 specialists actually use paid AI**. The other 5 do pure arithmetic — the kind of thing a spreadsheet formula does — because their job (is this stock above its average price? has it broken a 20-day high?) has one exact right answer. Asking an AI to do that would be slower, more expensive, and *less* consistent than a formula. We only pay for AI where a formula genuinely can't do the job: **understanding what a news headline means**, and **weighing several conflicting opinions into one final, explained call**.
+**The key design decision, and why it matters commercially:** only **5 of the 11 specialists actually use paid AI** by default (an 11th, the Orchestrator, only steps in on the rare run where it finds something worth fixing). The other 5 do pure arithmetic — the kind of thing a spreadsheet formula does — because their job (is this stock above its average price? has it broken a 20-day high?) has one exact right answer. Asking an AI to do that would be slower, more expensive, and *less* consistent than a formula. We only pay for AI where a formula genuinely can't do the job: **understanding what a news headline means**, and **weighing several conflicting opinions into one final, explained call**.
 
 That decision is why this app makes roughly **2 AI calls per full scan of the market**, whether we're scanning 10 stocks or 500.
 
 ---
 
-## 3. Meet the team — all 10 agents
+## 3. Meet the team — 11 agents
 
 We have two separate "crews": one that runs once a day (the **Swing crew**, for multi-day/multi-week ideas) and one that only makes sense while the market is open (the **Intraday crew**, for same-day price action).
 
@@ -66,7 +66,8 @@ We have two separate "crews": one that runs once a day (the **Swing crew**, for 
 | 3 | **Technical Agent** ("The Chart Reader") | Scores the price chart itself — trend direction, momentum (RSI), how it's doing vs. the Nifty 50. | ❌ No — pure maths |
 | 4 | **Risk Agent** ("The Skeptic") | Scores downside risk — volatility, how sharply it's crashed before, how easy it'd be to sell a position without moving the price. | ❌ No — pure maths |
 | 5 | **News/Event Reader** | Reads the real, deduplicated news headlines for every shortlisted stock **at once** and works out what happened, how big a deal it is, and whether it's good or bad news. | ✅ Yes — **1 AI call**, covers every stock together |
-| 6 | **Decision Agent** ("The Manager") | Weighs all four scores above + the real news read + your own investor profile (risk appetite, capital, sector preferences) and writes the final shortlist: bull case, bear case, a target price, and how much money to actually put into each pick. | ✅ Yes — **1 AI call**, covers every stock together |
+| 6 | **Decision Agent** ("The Manager") | Weighs all four scores above + the real news read + your own investor profile (risk appetite, capital, sector preferences) and writes the final shortlist: bull case, bear case, a target price, and how much money to actually put into each pick. Its prompt is also grounded with real, retrieved sector-risk notes — actual semantic search, not static boilerplate. | ✅ Yes — **1 AI call**, covers every stock together |
+| — | **Orchestrator** ("The Controller") | Not a fixed step, a real router: runs the Manager, checks its own output for real issues (a missing field, an internally inconsistent call), then *decides at runtime* whether to accept it or send it back with specific feedback for one bounded retry. This is what makes the pipeline a genuine multi-agent system rather than a fixed script calling agents in a hardcoded order. | ✅ Yes, but **only when a retry is actually needed** |
 
 ### The Intraday crew (runs on demand, during market hours, via `intraday_run.py`)
 
@@ -79,7 +80,7 @@ This is a completely separate, same-day mode: it looks at price action **minute-
 | 9 | **Narrator** | Writes a 2–3 sentence plain-English explanation of *why* each top pick scored the way it did, for the handful of stocks that made the final cut — it explains the score, it can never change it. | ✅ Yes — **1 AI call**, top picks only |
 | 10 | **Scorekeeper** *(optional, end-of-day)* | A separate, optional script you can run after the market closes: compares today's picks to what actually happened (target hit? stop hit? neither?) — a factual report card, not advice. | ✅ Yes — **1 AI call**, only if run |
 
-**Bottom line: 5 of the 10 agents never touch AI at all**, and the 5 that do are batched to cover the *whole* watchlist in a single call each, not one call per stock.
+**Bottom line: 5 of the 11 agents never touch AI at all**, the 5 core ones that do are batched to cover the *whole* watchlist in a single call each (not one call per stock), and the 11th — the Orchestrator — only calls AI on the rare run where its own quality check on the Manager's output actually finds something wrong.
 
 ---
 

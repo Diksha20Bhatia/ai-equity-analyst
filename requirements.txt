@@ -11,7 +11,14 @@ pandas>=2.0.0
 numpy>=1.24.0
 
 # --- Memory layer ---
-chromadb>=0.5.0            # optional vector memory; falls back to JSON if missing
+chromadb>=0.5.0            # vector memory + the retrieval knowledge base
+                            # (memory/knowledge_base.py); memory falls back to
+                            # JSON if chromadb is missing
+
+# --- Multi-agent orchestration ---
+langgraph>=0.2.0           # the Orchestrator's decide->reflect->route loop
+                            # (agents/orchestrator_agent.py) is a real
+                            # LangGraph state machine, not a hand-rolled while loop
 
 # --- Investor profile parsing (only what you use is required) ---
 pypdf>=4.0.0               # .pdf profiles

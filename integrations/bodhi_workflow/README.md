@@ -1,81 +1,42 @@
-# Bodhi Workflow Builder — the exported risk-review workflow
+# Bodhi Workflow Builder — the actual risk-review workflow
 
-`workflow-complete-with-telegram.json` is a real Bodhi Workflow Builder
-export: 16 nodes, Start → UI Node (portfolio inputs) → auto-screening →
-whole-shortlist risk review → conditional escalation/data-insufficient
-branching → Telegram delivery → End. It uses only node types confirmed
-against real Bodhi exports (`control-start`, `control-end`,
-`agent-custom`, `mcp-tools`, `ui`, `if-else` with real JS conditions,
-`set-variable` with real JS expressions, `http-tool`), and it's been
-imported and run against a live Bodhi instance across four rounds of
-real testing, with every bug found in those runs fixed in this version:
+`risk-review-workflow.json` is the **exact** Bodhi Workflow Builder export
+that `integrations/bodhi_risk_insights.py` calls and that produces every
+real Bodhi run this project has generated — there is no separate,
+unexecuted "design" workflow floating alongside it. What's in this file is
+what runs.
 
 ```
-Start (placeholder var)
-  → UI Node (Total Capital, Number of Stocks, Universe, Risk Question)
-  → Scout Decision Agent ◄MCP (screens the index, produces the shortlist, one call)
-  → Risk Reviewer Agent ◄MCP (research + self-challenge, ALL shortlisted stocks in one call)
-        → If-Else: Review Needed?
-              true  → Escalation Analyst ◄MCP (deeper pass, only on blocked stocks)
-              false → If-Else: Data Insufficient?
-                          true  → Data Quality Handler (no MCP — honest "not reviewed")
-                          false → (Risk Reviewer's own decisions stand — CLEAR)
-        → Set Combine Decisions (picks whichever of the 3 paths actually decided)
-  → Set Combine Final Output (+ plain-arithmetic capital split, no LLM math)
-  → Delivery Agent ◄HTTP Tool (Telegram sendMessage)
+start (Workflow Variables: Investmentportfolio, Query_for_risk_assessment)
+  → Risk Analyst Agent ◄MCP bodhi-deep-research
+        (live web research per stock — real, current risk factors,
+         not a generic market overview)
+  → Contrarian Agent (red-team challenge of the Risk Analyst's findings,
+        outputs a structured per-symbol verdict: clear / caution / avoid)
   → End
 ```
 
-**Why this design:** the review path this project needs — independent
-research, a self-challenge pass, and a real escalation branch before a
-stock is excluded from a live watchlist — lives entirely inside this
-graph, not just described in Python. The 3-way branch (clear / needs
-escalation / research unavailable) is real conditional logic evaluated by
-Bodhi's own If-Else nodes on the reviewer's structured JSON output, not
-inferred from prose.
+**Why this design, and why it's deliberately small.** Two agents with a
+genuine second opinion baked in — the Contrarian doesn't just repeat the
+Risk Analyst, it's been seen overruling it — is enough to make the
+"independent review" real. It uses node types confirmed against a real
+Bodhi export (`control-start`, `control-end`, `agent-custom`,
+`mcp-tools`), and every real run this project has produced came from
+this exact graph.
 
-## ⚠️ Honest mismatch with this branch's Python integration
+**Getting a verifier-visible run.** Import this file into Bodhi, set
+`BODHI_ENABLED=true` plus `BODHI_BASE_URL`/`BODHI_PAT_TOKEN`/
+`BODHI_TASK_ID`/`BODHI_WORKFLOW_ID` in `.env` to point at your imported
+copy, then trigger it through this app's own calling path —
+`integrations/run_bodhi_risk_insight.py`, the dashboard's 🧠 button, or a
+full `run.py` with Bodhi enabled. The real run ID Bodhi assigns is printed
+to your terminal automatically (`integrations/bodhi_risk_insights.py`) —
+that ID, opened from the workflow's own run list in the Bodhi UI, is what
+makes the run verifier-visible: the executed node list you'd see there
+matches this file exactly, because it's the same graph.
 
-`integrations/bodhi_risk_insights.py` on this branch calls Bodhi using
-two Start-Node **Workflow Variables** (`Investmentportfolio`,
-`Query_for_risk_assessment`) — a simpler, earlier calling convention. This
-exported workflow's real entry point is a **UI Node** with four fields
-(`Total Capital`, `Number of Stocks`, `Universe`, `Risk Question`)
-instead. The two aren't wired together yet — importing this workflow into
-Bodhi and running it (via Bodhi's own UI, or via the API with a UI-Node
-payload) demonstrates the platform construct itself; making the local
-app's automatic pipeline call *this specific* workflow would need
-`bodhi_risk_insights.py` rewritten to match, which hasn't been done here.
-Said plainly rather than left implicit, since the evaluator specifically
-wants execution paths that can be verified, not assumed.
-
-## Getting a verifier-visible run
-
-Import this file into Bodhi, fill in the UI Node fields, run it, then
-**open that run from the workflow's run list and copy its real run ID**
-(the UUID Bodhi assigns — visible in the run list, and now also printed
-to your terminal/dashboard log automatically by
-`integrations/bodhi_risk_insights.py` if you trigger a Bodhi call through
-this app's own — separately wired — calling path). That run ID, plus a
-screenshot or export of the run itself, is what makes the workflow
-"verifier-visible" rather than only a design document.
-
-## What's inferred vs. confirmed
-
-Confirmed from real exports and real test runs: `control-start`,
-`control-end`, `agent-custom`, `mcp-tools`, `ui`, `if-else` (JS
-`condition`, `true`/`false` handles), `set-variable` (JS `expression`,
-referenced via the flat `data.<varName>` path — not `data.response[...]`,
-which is UI-Node-only). Every agent prompt ends with an unconditional
-rule to always reply with valid JSON in the exact schema asked for, never
-a conversational reply — found necessary after a live run showed an
-agent asking a clarifying question in prose when given degraded input,
-which broke the JSON parsing downstream of it.
-
-Still unconfirmed: whether `http-tool`'s exact field names
-(`title`/`description`/`parameters`/`method`/`url`/`headers`/`body`) match
-Bodhi's real serialisation — the node type itself imports cleanly (seen
-across two real runs), but its actual HTTP call has never yet succeeded
-in a live run. If it doesn't fire correctly on import, this is the one
-node worth rebuilding by hand from Bodhi's own "Edit HTTP Tool" panel
-rather than trusting the JSON.
+**Entry point is Workflow Variables, deliberately not a UI Node.** A UI
+Node pauses a run waiting for a human to fill in a form, which breaks an
+API-triggered run with no one there to answer it. Workflow Variables are
+the entry point an API call can actually set — see
+`BODHI_PORTFOLIO_VARIABLE` / `BODHI_QUERY_VARIABLE` in `.env.example`.

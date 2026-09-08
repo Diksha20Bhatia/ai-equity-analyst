@@ -55,12 +55,16 @@ There are **two separate pipelines**:
 > error — it never quietly substitutes a fake number to keep going.
 >
 > **~2 AI calls per swing run, ~1 per intraday scan**, no matter how big
-> the universe is. Most of what looks like "AI analysis" is actually plain,
-> transparent math on real data — AI is reserved for the things a formula
-> genuinely can't do: reading news, explaining a score, and weighing
-> conflicting evidence into a final call. Every one of those calls is
-> routed through **Bodhi's LLM Gateway** (`config.call_bodhi_llm()`) —
-> no direct provider SDK is used anywhere in this codebase.
+> the universe is (occasionally +1 per risk tier, only when the Orchestrator's
+> quality check on the Decision Agent's output finds a real issue and asks
+> for one bounded retry — see §3a). Most of what looks like "AI analysis" is
+> actually plain, transparent math on real data — AI is reserved for the
+> things a formula genuinely can't do: reading news, explaining a score, and
+> weighing conflicting evidence into a final call. Every one of those calls
+> goes through **one governed entry point**, `config.call_llm()` — Google
+> Gemini by default, or Bodhi's LLM Gateway instead if
+> `USE_BODHI_LLM_GATEWAY=true` in `.env` — never a provider SDK called
+> directly from agent code.
 
 📖 **Want the deep-dive?** [HOW_IT_WORKS.md](HOW_IT_WORKS.md) walks through
 every agent, every file, every API call and every formula in plain English
@@ -87,7 +91,38 @@ ones who actually "think."
 | **Technical Agent** | The Chart Reader | Scores the real price chart — trend structure, RSI, relative strength vs Nifty, breakouts. | **0** — pure math |
 | **Risk Agent** | The Skeptic | Scores downside risk from real volatility, beta, max drawdown, liquidity, gap risk. | **0** — pure math |
 | **News/Event Reader** | (was "Sentiment Agent") | Reads real, deduplicated headlines for **all** shortlisted stocks and extracts what happened, how material it is, and the sentiment. | **1**, batched across every stock |
-| **Decision Agent** | The Manager | Weighs every real signal above plus your profile and produces the final shortlist — bull case, bear case, confidence, target price, a real ₹ split across your picks. Runs once per risk-appetite tier you selected. | **1 per risk tier**, batched across every stock |
+| **Decision Agent** | The Manager | Weighs every real signal above plus your profile and produces the final shortlist — bull case, bear case, confidence, target price, a real ₹ split across your picks. Its prompt is also grounded with real, retrieved sector-risk notes (see §3a) — not static text, actual semantic search per stock. Runs once per risk-appetite tier you selected. | **1 per risk tier**, batched across every stock |
+| **Orchestrator** | The Controller | Not a fixed step — a real router. Runs the Decision Agent, checks its own output for real, checkable issues (missing fields, internally inconsistent calls, confidence that ignores a flagged data-quality issue), then decides at runtime whether to accept the result or send it back with specific feedback for one more attempt. Bounded to 1 retry — it can never run away. | **0 normally** — **+1 per risk tier only when a retry is actually needed** |
+
+### 3a. The Orchestrator loop and retrieval — not a hardcoded sequence
+
+Every step above this point in the table is a genuine fixed pipeline — Step 2
+really does need Step 1's output, there's nothing to route between. The
+Decision Agent's output is different: it's a judgment call that can be wrong
+in checkable ways, so instead of just trusting it, `run.py` hands it to a
+real state machine (`agents/orchestrator_agent.py`, built on
+[LangGraph](https://github.com/langchain-ai/langgraph)):
+
+```
+decide (Decision Agent) → reflect (deterministic quality check, plain code)
+    → route (Orchestrator agent decides: retry, or finish)
+          ↳ back to "decide" with specific feedback, or → done
+```
+
+The quality *check* is plain code (a required field is either present or
+it isn't — same "no AI where a formula suffices" rule as the rest of this
+app). The quality *decision* — is this issue worth a retry, and what
+exactly should the Decision Agent fix — is a genuine judgment call, so
+that part is a real LLM call, made only when the check actually finds
+something wrong.
+
+Separately, the Decision Agent's prompt is grounded with **real retrieval**:
+`memory/knowledge_base.py` stores a small set of India-equity sector-risk
+notes in ChromaDB and retrieves the ones semantically relevant to *each
+stock's own sector* before every Decision Agent call — actual vector
+similarity search, not a static block of text pasted into every prompt
+regardless of relevance, and it returns nothing (never the whole
+knowledge base) if retrieval isn't available.
 
 ### The Intraday crew — runs on demand, market hours only
 
@@ -277,7 +312,7 @@ ai-equity-analyst/
 ├── intraday_run.py                ← runs the full INTRADAY pipeline
 ├── intraday_backtest.py            ← optional end-of-day report card for today's intraday picks
 ├── dashboard.py                     ← Streamlit UI: profile builder, browse runs, trigger a run
-├── config.py                         ← reads .env; call_bodhi_llm() is the one AI entry point every agent uses
+├── config.py                         ← reads .env; call_llm() is the one AI entry point every agent uses
 ├── observability.py                   ← optional LangSmith tracing (no-op if not configured)
 ├── .env.example                        ← copy this to .env and add your settings
 ├── requirements.txt                     ← the Python libraries to install
@@ -291,6 +326,7 @@ ai-equity-analyst/
 │   ├── risk_agent.py              ← The Skeptic — 0 AI calls, real risk scoring
 │   ├── sentiment_agent.py         ← News/Event Reader — 1 batched AI call for all stocks
 │   ├── decision_agent.py          ← The Manager — 1 batched AI call per risk tier, + real ₹ allocation
+│   ├── orchestrator_agent.py      ← The Controller — LangGraph decide→reflect→route loop around the Manager
 │   ├── intraday_agent.py          ← The Day Trader — 0 AI calls, real ORB/VWAP/volume scoring
 │   ├── intraday_quality_agent.py  ← Data Sentinel — 0-1 AI call, only for unusual gaps
 │   ├── intraday_narrator_agent.py ← Narrator — 1 batched AI call, top picks only, write-only fields
@@ -338,12 +374,12 @@ formula, every API endpoint — see **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
 
 | Source | What it provides | Used by | Key needed? |
 |---|---|---|---|
-| **Bodhi LLM Gateway** | News interpretation, final decision synthesis, intraday narration/gap review — every AI call in the app, routed through one governed endpoint | `agents/*.py` (5 of the 10 agents), plus profile structuring, via `config.call_bodhi_llm()` | ✅ yes |
+| **LLM backend** (Gemini by default, or Bodhi's LLM Gateway) | News interpretation, final decision synthesis, orchestrator routing, intraday narration/gap review — every AI call in the app, through one governed entry point | `agents/*.py`, plus profile structuring, via `config.call_llm()` | ✅ yes |
 | **Yahoo Finance** (`yfinance`) | Real daily *and* 5-minute price/volume history, real company fundamentals, the Nifty 50 index itself | `data/market_data.py`, `data/market_context.py`, `data/intraday_data.py` | ❌ free |
 | **Google News RSS** | Real, current headlines per stock | `data/market_data.py` (fetch) → `agents/sentiment_agent.py` (interpret) | ❌ free |
 | **NSE archives** | Official Nifty 50 / Nifty 500 constituent symbol lists | `data/nse_universe.py` | ❌ free |
 | **Telegram Bot API** | Delivers the finished shortlist to your phone | `alerts/telegram_alert.py` | ✅ yes (optional) |
-| **ChromaDB** (local) | Stores real price/score history per stock for the audit/delta system | `memory/memory_layer.py` | ❌ local, no key |
+| **ChromaDB** (local) | Stores real price/score history per stock for the audit/delta system, and the retrieval knowledge base | `memory/memory_layer.py`, `memory/knowledge_base.py` | ❌ local, no key |
 | **LangSmith** | Optional: traces every AI call and pipeline step for auditing/debugging | `observability.py` | ✅ yes (optional, free tier) |
 | **TradingView Desktop** | Optional: real watchlist push — no API, no key; drives your already-logged-in Desktop app locally over Chrome DevTools Protocol | `alerts/tradingview_watchlist.py` | ❌ local only, zero credentials |
 | **Bodhi** | Optional: an extra, external AI-driven risk read on today's real shortlist | `integrations/bodhi_risk_insights.py` | ✅ yes (optional, PAT token) |
@@ -397,35 +433,44 @@ uv pip install -r requirements.txt      # or: pip install -r requirements.txt
 cp .env.example .env
 ```
 
-**Step 4 — Connect the Bodhi LLM Gateway**
+**Step 4 — Connect an LLM backend**
 
-Every real AI call in this app — news interpretation, decision
-synthesis, profile structuring — goes through Bodhi's LLM Gateway, an
-OpenAI-compatible endpoint (`config.call_bodhi_llm()`). No provider SDK
-(Gemini, OpenAI, Anthropic) is called directly anywhere in this codebase.
+Every real AI call in this app — news interpretation, decision synthesis,
+orchestrator routing, profile structuring — goes through one governed
+entry point, `config.call_llm()`. It routes to **Google Gemini by
+default**; set `USE_BODHI_LLM_GATEWAY=true` to route through **Bodhi's
+LLM Gateway** instead. Either way, no agent file ever calls a provider SDK
+directly — they only ever call `config.call_llm()`.
 
-1. Get your API token and team identifier from your Bodhi platform access
-   (Bodhi calls the team identifier "ASPIRE TEAM NAME" — sent as the
-   `trace_user_id` header).
-2. In `.env`:
-   ```
-   BODHI_LLM_GATEWAY_URL=https://bodhi-llm-gateway.sandbox.psbodhi.live
-   BODHI_LLM_GATEWAY_TOKEN=your-token-here
-   BODHI_LLM_TRACE_USER_ID=your-team-name
-   BODHI_LLM_MODEL=gemini-2.5-pro
-   ```
-3. `BODHI_LLM_MODEL` can be any model ID Bodhi's gateway currently
-   exposes — check `GET /v1/models` against your gateway URL if unsure.
+*Default — Gemini:*
+```
+GOOGLE_AUTH_MODE=token          # or "adc" for Vertex AI, or "auto" to try both
+GOOGLE_API_KEY=your-key-here    # https://aistudio.google.com/apikey
+GOOGLE_MODEL=gemini-2.5-pro
+```
+
+*Optional — Bodhi's LLM Gateway:*
+```
+USE_BODHI_LLM_GATEWAY=true
+BODHI_LLM_GATEWAY_URL=https://bodhi-llm-gateway.sandbox.psbodhi.live
+BODHI_LLM_GATEWAY_TOKEN=your-token-here
+BODHI_LLM_TRACE_USER_ID=your-team-name    # Bodhi calls this "ASPIRE TEAM NAME"
+BODHI_LLM_MODEL=gemini-2.5-pro            # check GET /v1/models if unsure
+```
+
+See `.env.example` for the full set of Gemini auth-mode options (Vertex AI,
+a pre-fetched access token, etc.).
 
 **Step 5 — Run the swing scan**
 ```bash
 uv run python run.py       # or: python run.py
 ```
 
-The header prints `Bodhi LLM Gateway: connected` when it worked. If it
-says `NOT CONFIGURED`, `run.py` stops immediately with
-the reason — fix `.env` and re-run. Market data (Yahoo Finance, Google
-News, NSE lists) needs no key at all.
+The header prints which backend is active and whether it's connected —
+`LLM backend : Google Gemini (...)` or `LLM backend : Bodhi LLM Gateway
+(...)`. If it's `NOT CONFIGURED`, `run.py` stops immediately with the
+reason — fix `.env` and re-run. Market data (Yahoo Finance, Google News,
+NSE lists) needs no key at all.
 
 **Step 6 — Try the intraday scanner** (during market hours, 09:15–15:30 IST)
 ```bash

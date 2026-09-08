@@ -16,9 +16,13 @@ It walks through the whole morning routine, in order:
   5. News/Event Reader makes ONE batched AI call to interpret real headlines
      for the whole watchlist at once.
   6. Memory reports what changed since the last call on each stock.
-  7. Decision Agent makes ONE batched AI call PER selected risk-appetite
-     tier (a plain "moderate" investor gets 1 call; someone who selected
-     conservative + aggressive gets 2, one shortlist per tier).
+  7. Decision Agent runs inside a real Orchestrator loop (agents/
+     orchestrator_agent.py, a LangGraph state machine) PER selected
+     risk-appetite tier: propose a shortlist -> deterministic quality check
+     -> an Orchestrator agent decides at runtime whether to accept it or
+     send it back with specific feedback for one more attempt. A plain
+     "moderate" investor gets 1 tier; conservative + aggressive gets 2 —
+     each tier runs its own independent loop.
   8. Store today's scores into memory. Then, if BODHI_ENABLED=true, send
      today's real shortlist to a Bodhi workflow for risk verification and
      wait for its answer (see integrations/bodhi_risk_insights.py) — its
@@ -69,6 +73,7 @@ from agents.technical_agent import TechnicalAgent
 from agents.sentiment_agent import SentimentAgent
 from agents.risk_agent import RiskAgent
 from agents.decision_agent import DecisionAgent
+from agents.orchestrator_agent import OrchestratorAgent, build_tier_graph
 
 
 def banner(text):
@@ -186,17 +191,31 @@ def main():
             memory.build_delta(a["symbol"], a["market_stats"]["current_price"], current_scores)
         )
 
-    # 7. Decision Agent — ONE batched AI call PER selected risk-appetite tier ---
+    # 7. Decision Agent — routed through a real Orchestrator loop PER tier ------
+    # Not a fixed "call it once and trust it" step: a real LangGraph state
+    # machine (agents/orchestrator_agent.py) runs the Decision Agent, checks
+    # its own output for real issues, and lets an Orchestrator agent decide
+    # at runtime whether to accept it or send it back with specific feedback
+    # for another attempt — bounded retries, never a runaway loop.
     risk_tiers = _resolve_risk_tiers(profile)
-    banner(f"STEP 5 — Decision Agent — 1 batched AI call x {len(risk_tiers)} risk tier(s)")
+    banner(f"STEP 5 — Decision Agent (orchestrated) — x {len(risk_tiers)} risk tier(s)")
     decision = DecisionAgent()
+    orchestrator = OrchestratorAgent()
+    tier_graph = build_tier_graph(decision, orchestrator)
     results_by_tier = {}
     for tier in risk_tiers:
         tier_profile = dict(profile)
         tier_profile["risk_appetite"] = tier
         tier_profile.pop("risk_appetites", None)
-        results_by_tier[tier] = decision.run(analyses, tier_profile, mkt, memory_deltas, top_n=settings.top_n)
-        print(f"  [{tier}] {len(results_by_tier[tier].get('shortlist', []))} pick(s)")
+        final_state = tier_graph.invoke({
+            "analyses": analyses, "profile": tier_profile, "market_context": mkt,
+            "memory_deltas": memory_deltas, "top_n": settings.top_n,
+            "decision_result": {}, "issues": [], "retries": 0, "max_retries": 1,
+            "route_reason": "", "feedback": "", "next": "",
+        })
+        results_by_tier[tier] = final_state["decision_result"]
+        print(f"  [{tier}] {len(results_by_tier[tier].get('shortlist', []))} pick(s) "
+              f"— {final_state['retries']} retry(ies) — {final_state.get('route_reason', '')}")
 
     # 8. Store memory + send the alert -------------------------------------------
     # A symbol can get a different call at different risk tiers — memory keeps

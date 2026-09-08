@@ -35,6 +35,7 @@ import math
 from collections import Counter
 
 from agents.base_agent import BaseAgent
+from memory.knowledge_base import retrieve_for_sector
 from observability import traceable
 
 # How far towards the investor's own max position-size % we're willing to
@@ -77,7 +78,8 @@ class DecisionAgent(BaseAgent):
     )
 
     @traceable(run_type="chain", name="Decision Agent")
-    def run(self, analyses: list, profile: dict, market_context: dict, memory_deltas: list, top_n: int = 3) -> dict:
+    def run(self, analyses: list, profile: dict, market_context: dict, memory_deltas: list,
+            top_n: int = 3, feedback: str = "") -> dict:
         """
         analyses: list of per-stock dicts with fundamental/technical/risk (pure
                   code), event (from the batched News/Event Reader), real
@@ -85,8 +87,11 @@ class DecisionAgent(BaseAgent):
         profile:  the investor profile dict (may be empty).
         market_context: real Nifty 50 today/trend (data/market_context.py).
         memory_deltas: list of real "what changed since last call" strings.
+        feedback: optional critique from the Orchestrator's self-reflection
+                  loop (agents/orchestrator_agent.py) on a PREVIOUS attempt's
+                  output for this same tier — empty on a first attempt.
         """
-        prompt = self._build_prompt(analyses, profile, market_context, memory_deltas, top_n)
+        prompt = self._build_prompt(analyses, profile, market_context, memory_deltas, top_n, feedback)
         result = self.ask_json(prompt, temperature=0.4)
         if "shortlist" not in result:
             raise RuntimeError(f"[{self.name}] response missing 'shortlist': {result}")
@@ -207,7 +212,7 @@ class DecisionAgent(BaseAgent):
         }
 
     # ------------------------------------------------------------------
-    def _build_prompt(self, analyses, profile, market_context, memory_deltas, top_n):
+    def _build_prompt(self, analyses, profile, market_context, memory_deltas, top_n, feedback=""):
         # Real sector concentration within today's watchlist — a partial
         # portfolio-fit signal, since this app doesn't track actual holdings.
         sector_counts = Counter(a.get("sector") for a in analyses if a.get("sector"))
@@ -227,6 +232,11 @@ class DecisionAgent(BaseAgent):
             event = a.get("event", {})
             quality = a.get("data_quality") or []
             quality_txt = "; ".join(quality) if quality else "no issues flagged"
+            retrieved = retrieve_for_sector(a.get("sector"))
+            retrieved_txt = (
+                "\n  Retrieved domain notes (real semantic retrieval, not generic filler):\n"
+                + "\n".join(f"    - {r}" for r in retrieved)
+            ) if retrieved else ""
             blocks.append(
                 f"{a['symbol']} (sector: {a.get('sector', 'unknown')}):\n"
                 f"  Current price: ₹{stats.get('current_price', 'n/a')}\n"
@@ -240,6 +250,7 @@ class DecisionAgent(BaseAgent):
                 f"{event.get('summary', 'no summary')}\n"
                 f"  Why flagged by the Scout: {a.get('research_note', 'n/a')}\n"
                 f"  Data quality: {quality_txt}"
+                + retrieved_txt
             )
 
         profile_txt = "\n".join(
@@ -252,6 +263,10 @@ class DecisionAgent(BaseAgent):
             f"trend={market_context.get('nifty_trend', 'unknown')}, "
             f"volatility={market_context.get('nifty_volatility_pct', 0)}% annualised"
         )
+        feedback_txt = (
+            "\n\nFEEDBACK ON YOUR PREVIOUS ATTEMPT (fix these specific issues using ONLY "
+            f"the same real data above — never invent new numbers to resolve them):\n  {feedback}"
+        ) if feedback else ""
 
         return (
             "REAL MARKET CONTEXT TODAY:\n" + market_txt +
@@ -280,4 +295,5 @@ class DecisionAgent(BaseAgent):
             '"invalidation": "one line: what future evidence would change this view", '
             '"key_risk": "one line"}], '
             '"summary": "one-paragraph market note referencing the real Nifty 50 context"}'
+            + feedback_txt
         )
