@@ -1,13 +1,42 @@
 # 🧠 AI Equity Analyst
 
-An **agentic AI** that behaves like a small equity research desk for the
-**Indian stock market** — powered by Google **Gemini**, real Yahoo Finance
-prices, and real news.
+**An internal Publicis Sapient engineering project** — a working,
+end-to-end reference implementation of agentic AI orchestration, built
+against a real, non-toy domain (Indian equity screening) specifically
+because that domain has real data, real risk, and a real measurable
+outcome, rather than a synthetic demo where "it works" can't really be
+checked. Built as part of the Gen AI 201 curriculum, for other Publicis
+Sapient engineers to read end-to-end, adapt, and build on: multi-agent
+orchestration, governed model access through Bodhi's LLM Gateway, and a
+real Bodhi Workflow Builder flow with branching and escalation logic —
+see `integrations/bodhi_workflow/` for the exported workflow itself.
 
-Instead of you opening a stock screener and manually checking 50–500
-companies every morning, a team of AI "specialists" does it for you and
-hands you a short, reasoned shortlist of 2–3 high-conviction ideas — with
-its reasoning shown, not hidden.
+## Who this is for, and how to judge it
+
+**Beneficiary:** the Publicis Sapient engineering team — this is
+positioned as an internal developer-productivity and reference-pattern
+project, not a product for external investors. Two concrete things it's
+meant to deliver:
+
+1. **A reference pattern other PS engineers can copy.** A real,
+   documented example of: batching AI calls aggressively instead of
+   calling an LLM per item (see §5 below — ~2 calls per run regardless of
+   universe size), routing every model call through Bodhi's Gateway
+   instead of a direct provider SDK, and expressing multi-step review
+   logic (research → challenge → escalate) as an actual Bodhi Workflow
+   Builder graph rather than only in prompts.
+2. **A real, measured quality signal — not a claim.** `tracker/quality_report.py`
+   computes, from real tracked prices (never invented), whether past picks
+   actually went up or down since they were listed. This is the project's
+   own success metric, and it's reported honestly, including when it's
+   unflattering: as of this submission, 11 tracked picks show a 0% win
+   rate and a -2.38% average move since listing. That's not a good
+   result — it's an honest one, and it's exactly the kind of measurement
+   an internal tool needs so a team can tell whether it's actually helping
+   before relying on it, rather than assuming a demo that "looks smart"
+   is the same as a tool that "picks well." Run
+   `uv run python tracker/quality_report.py` to recompute it against
+   whatever history exists at the time.
 
 There are **two separate pipelines**:
 
@@ -21,15 +50,17 @@ There are **two separate pipelines**:
 > A workflow that *observes → reasons → prioritises → acts*.
 >
 > **Everything it looks at is real.** There is no demo mode and no
-> rule-based fallback anywhere in this codebase. If Gemini or a data source
-> can't be reached, the app stops and shows you the real error — it never
-> quietly substitutes a fake number to keep going.
+> rule-based fallback anywhere in this codebase. If the Bodhi LLM Gateway
+> or a data source can't be reached, the app stops and shows you the real
+> error — it never quietly substitutes a fake number to keep going.
 >
 > **~2 AI calls per swing run, ~1 per intraday scan**, no matter how big
 > the universe is. Most of what looks like "AI analysis" is actually plain,
 > transparent math on real data — AI is reserved for the things a formula
 > genuinely can't do: reading news, explaining a score, and weighing
-> conflicting evidence into a final call.
+> conflicting evidence into a final call. Every one of those calls is
+> routed through **Bodhi's LLM Gateway** (`config.call_bodhi_llm()`) —
+> no direct provider SDK is used anywhere in this codebase.
 
 📖 **Want the deep-dive?** [HOW_IT_WORKS.md](HOW_IT_WORKS.md) walks through
 every agent, every file, every API call and every formula in plain English
@@ -78,7 +109,7 @@ it does that for a couple of AI calls per run, not per stock.
 ```mermaid
 flowchart TB
     subgraph External["🌐 External services (all real, mostly free)"]
-        Gemini[("Google Gemini<br/>Vertex AI or AI Studio<br/>— needs a key")]
+        Gemini[("Bodhi LLM Gateway<br/>the one AI entry point<br/>— needs a token")]
         Yahoo[("Yahoo Finance<br/>via yfinance<br/>— free, keyless")]
         GNews[("Google News RSS<br/>— free, keyless")]
         NSEArc[("NSE archives<br/>Nifty 50 / 500 lists<br/>— free, keyless")]
@@ -150,7 +181,7 @@ flowchart TB
 **Every connection above is either a plain, direct HTTP/SDK call, or a local,
 credential-free connection to an app already running on your own machine.**
 `requests` handles Google News/NSE/Telegram, `yfinance` handles Yahoo Finance,
-`google-genai` handles Gemini, and `langsmith` (optional) handles tracing —
+`requests` handles Bodhi's LLM Gateway, and `langsmith` (optional) handles tracing —
 none of those are MCP. The one exception is the optional TradingView
 watchlist push: it shells out to the [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp)
 CLI, which drives your already-logged-in TradingView Desktop app over Chrome
@@ -201,9 +232,9 @@ sequenceDiagram
     Run->>You: save output/analysis_DATE.json
 ```
 
-If **any** step fails — Gemini unreachable, Yahoo rate-limiting a symbol —
+If **any** step fails — the Bodhi LLM Gateway unreachable, Yahoo rate-limiting a symbol —
 that step raises with a full error. A single bad symbol is *skipped*
-(logged, not fatal) thanks to the data-quality gate; a Gemini outage still
+(logged, not fatal) thanks to the data-quality gate; a Bodhi Gateway outage still
 stops the whole run, since there's no fallback to silently degrade to.
 
 ## ⚡ What happens during an intraday scan — step by step
@@ -246,14 +277,14 @@ ai-equity-analyst/
 ├── intraday_run.py                ← runs the full INTRADAY pipeline
 ├── intraday_backtest.py            ← optional end-of-day report card for today's intraday picks
 ├── dashboard.py                     ← Streamlit UI: profile builder, browse runs, trigger a run
-├── config.py                         ← reads .env, logs in to Gemini
+├── config.py                         ← reads .env; call_bodhi_llm() is the one AI entry point every agent uses
 ├── observability.py                   ← optional LangSmith tracing (no-op if not configured)
 ├── .env.example                        ← copy this to .env and add your settings
 ├── requirements.txt                     ← the Python libraries to install
 ├── sample_profile.txt                    ← an example investor profile you can edit
 │
 ├── agents/
-│   ├── base_agent.py              ← shared skill: "ask Gemini, get JSON back, or raise" — traced here
+│   ├── base_agent.py              ← shared skill: "ask Bodhi's LLM Gateway, get JSON back, or raise" — traced here
 │   ├── research_agent.py          ← The Scout — 0 AI calls, real anomaly scoring
 │   ├── fundamental_agent.py       ← The Analyst — 0 AI calls, real business-quality scoring
 │   ├── technical_agent.py         ← The Chart Reader — 0 AI calls, real chart scoring
@@ -307,7 +338,7 @@ formula, every API endpoint — see **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**.
 
 | Source | What it provides | Used by | Key needed? |
 |---|---|---|---|
-| **Google Gemini** | News interpretation, final decision synthesis, intraday narration/gap review | `agents/*.py` (5 of the 10 agents), plus profile structuring | ✅ yes |
+| **Bodhi LLM Gateway** | News interpretation, final decision synthesis, intraday narration/gap review — every AI call in the app, routed through one governed endpoint | `agents/*.py` (5 of the 10 agents), plus profile structuring, via `config.call_bodhi_llm()` | ✅ yes |
 | **Yahoo Finance** (`yfinance`) | Real daily *and* 5-minute price/volume history, real company fundamentals, the Nifty 50 index itself | `data/market_data.py`, `data/market_context.py`, `data/intraday_data.py` | ❌ free |
 | **Google News RSS** | Real, current headlines per stock | `data/market_data.py` (fetch) → `agents/sentiment_agent.py` (interpret) | ❌ free |
 | **NSE archives** | Official Nifty 50 / Nifty 500 constituent symbol lists | `data/nse_universe.py` | ❌ free |
@@ -366,47 +397,33 @@ uv pip install -r requirements.txt      # or: pip install -r requirements.txt
 cp .env.example .env
 ```
 
-**Step 4 — Connect Gemini** (pick **one** method)
+**Step 4 — Connect the Bodhi LLM Gateway**
 
-#### Method 1 — Google AI Studio API key (easiest)
-1. Go to **https://aistudio.google.com/apikey** and create a free API key.
+Every real AI call in this app — news interpretation, decision
+synthesis, profile structuring — goes through Bodhi's LLM Gateway, an
+OpenAI-compatible endpoint (`config.call_bodhi_llm()`). No provider SDK
+(Gemini, OpenAI, Anthropic) is called directly anywhere in this codebase.
+
+1. Get your API token and team identifier from your Bodhi platform access
+   (Bodhi calls the team identifier "ASPIRE TEAM NAME" — sent as the
+   `trace_user_id` header).
 2. In `.env`:
    ```
-   GOOGLE_AUTH_MODE=token
-   GOOGLE_GENAI_USE_VERTEXAI=FALSE
-   GOOGLE_API_KEY=paste-your-key-here
+   BODHI_LLM_GATEWAY_URL=https://bodhi-llm-gateway.sandbox.psbodhi.live
+   BODHI_LLM_GATEWAY_TOKEN=your-token-here
+   BODHI_LLM_TRACE_USER_ID=your-team-name
+   BODHI_LLM_MODEL=gemini-2.5-pro
    ```
-
-#### Method 2 — Google Cloud / Vertex AI
-1. Install the gcloud CLI, then log in:
-   ```bash
-   gcloud auth application-default login
-   ```
-2. Enable the Vertex AI API on your project (one time):
-   ```bash
-   gcloud services enable aiplatform.googleapis.com --project YOUR_PROJECT
-   ```
-3. In `.env`:
-   ```
-   GOOGLE_AUTH_MODE=adc
-   GOOGLE_GENAI_USE_VERTEXAI=TRUE
-   GOOGLE_CLOUD_PROJECT=your-project-id
-   GOOGLE_CLOUD_LOCATION=europe-west2
-   ```
-
-> `GOOGLE_AUTH_MODE=auto` tries Vertex AI first, then falls back to the API
-> key — handy if you're not sure which will work. Note: if
-> `GOOGLE_GENAI_USE_VERTEXAI=TRUE`, the SDK routes through Vertex even in
-> token mode — set it to `FALSE` if you want the API key to actually hit
-> AI Studio instead.
+3. `BODHI_LLM_MODEL` can be any model ID Bodhi's gateway currently
+   exposes — check `GET /v1/models` against your gateway URL if unsure.
 
 **Step 5 — Run the swing scan**
 ```bash
 uv run python run.py       # or: python run.py
 ```
 
-The header prints `Gemini login: adc (connected)` or `token (connected)`
-when it worked. If it says `NOT CONNECTED`, `run.py` stops immediately with
+The header prints `Bodhi LLM Gateway: connected` when it worked. If it
+says `NOT CONFIGURED`, `run.py` stops immediately with
 the reason — fix `.env` and re-run. Market data (Yahoo Finance, Google
 News, NSE lists) needs no key at all.
 
@@ -434,7 +451,7 @@ Opens at `http://localhost:8501`. From there you can:
   preferred/excluded sectors, max position size). Every field that isn't
   obvious has a plain-English tooltip explaining what it means and why it
   matters. Your form answers always win over the document. Saved as JSON
-  — which the next run loads **without an extra Gemini call**.
+  — which the next run loads **without an extra AI call**.
 - **Browse any past swing run** — pick a date, see the shortlist as cards
   per risk tier (opportunity score, confidence, HIGH/LOW conviction with a
   plain-English reason, bull/bear case, suggested ₹ allocation), and expand
@@ -445,7 +462,7 @@ Opens at `http://localhost:8501`. From there you can:
 - **Browse any intraday scan** — same idea, on the "⚡ Intraday scan" tab:
   entry/stop/target levels, the mechanical read, and the Narrator's
   explanation + pattern tag for each pick.
-- **Edit `UNIVERSE` / `TOP_N`** — written straight to `.env`. Gemini/Telegram
+- **Edit `UNIVERSE` / `TOP_N`** — written straight to `.env`. Bodhi/Telegram
   credentials are intentionally **not** editable here — they're secrets,
   not day-to-day knobs, so they stay `.env`-only.
 - **Trigger a run** — separate buttons for **▶ Run swing analysis** and
@@ -508,7 +525,7 @@ prefer editing a file directly:
    `sample_profile.txt` for an example.)
 2. Point `.env` at it: `PROFILE_PATH=my_profile.pdf`
 3. Run as usual. A `.json` file is loaded as-is (no AI call). Anything else
-   goes through one Gemini call to structure it into risk appetite, capital,
+   goes through one Bodhi Gateway call to structure it into risk appetite, capital,
    horizon, sector preferences/exclusions and constraints; if that fails, a
    light keyword scan fills in a rough version instead.
 
@@ -692,7 +709,7 @@ response — which is what `integrations/bodhi_client.py`'s
 
 ## 🔭 Tracing every AI call (LangSmith, optional)
 
-Set these in `.env` and every real Gemini call, plus every pipeline step,
+Set these in `.env` and every real AI call, plus every pipeline step,
 shows up as one visual trace tree at [smith.langchain.com](https://smith.langchain.com):
 
 ```
@@ -728,7 +745,7 @@ crontab -e
 ## 🧠 Design principles worth knowing
 
 **Why there's no fallback mode.** Earlier versions had a demo mode
-(fabricated numbers) and a rule-based fallback whenever Gemini was
+(fabricated numbers) and a rule-based fallback whenever the AI gateway was
 unreachable. Both were removed: a fabricated number that *looks* real is
 worse than no number, and a formula quietly standing in for an LLM's
 reasoning defeats the point of an agentic analyst. Now: real data or a
@@ -758,8 +775,8 @@ formula used.
 
 | You see | What it means | Fix |
 |---------|---------------|-----|
-| `google-genai not installed` | Gemini library missing | `pip install google-genai` |
-| `Gemini is not configured` | credentials didn't load | recheck the `.env` auth setup above |
+| `Bodhi LLM Gateway is not configured` | `BODHI_LLM_GATEWAY_TOKEN` missing | set it (and `BODHI_LLM_TRACE_USER_ID`) in `.env` — see Step 4 above |
+| `Bodhi LLM Gateway call failed (401/403 ...)` | your token is wrong, expired, or not provisioned for the model in `BODHI_LLM_MODEL` | recheck the token, or try a different `BODHI_LLM_MODEL` from `GET /v1/models` |
 | `[data] skipping X: insufficient data (...)` | one symbol's data was bad/stale/unreachable | normal — that symbol is excluded, the rest of the scan continues |
 | `[intraday] skipping X: ...` | no intraday bars for that symbol right now | normal outside market hours, or for a thinly-traded symbol |
 | `[quality] excluding X: ...` | the intraday quality gate caught stale/broken data or an unconfirmed corporate-action-sized gap | normal — that symbol is excluded from today's intraday scoring |
@@ -768,8 +785,7 @@ formula used.
 | Telegram `chat not found` / `403 bot can't message the bot` | wrong `TELEGRAM_CHAT_ID` (often the bot's own id was used by mistake) | message your bot from your own account first, then re-fetch `getUpdates` |
 | Telegram `message is too long` | pre-2026 behaviour — now auto-split into multiple messages | update to the latest `alerts/telegram_alert.py` if you still see this |
 | `[observability] LANGSMITH_API_KEY is set but the langsmith package isn't installed` | tracing was turned on in `.env` before installing the library | `uv pip install langsmith` |
-| `RefreshError: Reauthentication is needed` | your Google Cloud ADC token expired (Vertex AI mode) | `gcloud auth application-default login` |
-| `403 API_KEY_SERVICE_BLOCKED` on a token-mode call | `GOOGLE_GENAI_USE_VERTEXAI=TRUE` is routing an API-key call through Vertex, which the key isn't provisioned for | set `GOOGLE_GENAI_USE_VERTEXAI=FALSE` for true AI Studio routing |
+| `Bodhi LLM Gateway returned an unexpected response shape` | the gateway's response didn't match the OpenAI-compatible shape this app expects | check the raw response printed in the error against Bodhi's own `/v1/chat/completions` docs |
 | `[tradingview] skipped: timed out` | TradingView Desktop isn't running with the debug port enabled | launch it via `launch_tv_debug_mac.sh` before running |
 | `[tradingview] skipped: 'node' not found, or tradingview-mcp isn't cloned` | `TRADINGVIEW_CLI_PATH` is wrong, or the repo/Node.js isn't installed | recheck the setup steps above |
 | `RuntimeError: No workbook found` from `price_tracker.py` | you haven't run `run.py` yet this session | run the swing scan at least once first — there's nothing to track yet |

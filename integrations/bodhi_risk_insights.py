@@ -135,8 +135,14 @@ def verify_shortlist(results_by_tier: dict, analyses: list) -> dict:
       flagged_symbols -- set of symbols verdict-flagged as avoid/high-risk
                          (empty if verdicts is None — nothing gets excluded
                          from TradingView just because parsing failed)
+      run_id         -- Bodhi's own real run id for this call, or None if
+                         Bodhi never actually ran. This is the same UUID
+                         you'd see opening the run from the workflow's run
+                         list in the Bodhi UI and copying it by hand —
+                         printed to the terminal below so you don't have
+                         to.
     """
-    empty = {"ran": False, "report": None, "verdicts": None, "flagged_symbols": set()}
+    empty = {"ran": False, "report": None, "verdicts": None, "flagged_symbols": set(), "run_id": None}
     if not settings.bodhi_enabled:
         return empty
 
@@ -158,7 +164,7 @@ def verify_shortlist(results_by_tier: dict, analyses: list) -> dict:
             settings.bodhi_portfolio_variable: _portfolio_text(results_by_tier, analyses),
             settings.bodhi_query_variable: _query_text(),
         }
-        report = call_bodhi_workflow(
+        report, run_id = call_bodhi_workflow(
             base_url=settings.bodhi_base_url,
             pat_token=settings.bodhi_pat_token,
             task_id=settings.bodhi_task_id,
@@ -171,6 +177,8 @@ def verify_shortlist(results_by_tier: dict, analyses: list) -> dict:
     except Exception as e:  # noqa: BLE001
         print(f"[bodhi] skipped: {e}")
         return empty
+
+    print(f"[bodhi] run id: {run_id}")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = OUTPUT_DIR / f"bodhi_risk_insight_{dt.date.today().isoformat()}.txt"
@@ -189,4 +197,4 @@ def verify_shortlist(results_by_tier: dict, analyses: list) -> dict:
         print("[bodhi] no structured per-symbol verdict found in the answer — "
               "nothing will be filtered from TradingView; see the full report in Telegram")
 
-    return {"ran": True, "report": report, "verdicts": verdicts, "flagged_symbols": flagged}
+    return {"ran": True, "report": report, "verdicts": verdicts, "flagged_symbols": flagged, "run_id": run_id}

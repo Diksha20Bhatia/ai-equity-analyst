@@ -55,7 +55,7 @@ import datetime as dt
 
 import observability
 from observability import traceable
-from config import settings, auth_used, client
+from config import settings
 from data import market_data, market_context
 from data.nse_universe import resolve_universe
 from memory.memory_layer import MemoryLayer
@@ -81,15 +81,34 @@ def banner(text):
 def main():
     banner("AI EQUITY ANALYST  —  daily run")
     print(f"Date        : {dt.date.today().isoformat()}")
-    print(f"Gemini login: {auth_used}  ({'connected' if client else 'NOT CONNECTED'})")
-    print(f"Model       : {settings.model}")
-    print(f"Tracing     : {'LangSmith (connected)' if observability.enabled else 'disabled (set LANGSMITH_API_KEY to enable)'}")
-
-    if client is None:
-        raise RuntimeError(
-            "Gemini is not configured — check GOOGLE_AUTH_MODE, GOOGLE_API_KEY, "
-            "or your Google Cloud ADC login in .env."
+    if settings.use_bodhi_llm_gateway:
+        print(f"LLM backend : Bodhi LLM Gateway "
+              f"({'connected' if settings.bodhi_llm_gateway_token else 'NOT CONFIGURED'})")
+        print(f"Model       : {settings.bodhi_llm_model}")
+        if not settings.bodhi_llm_gateway_token:
+            raise RuntimeError(
+                "Bodhi LLM Gateway is not configured — set BODHI_LLM_GATEWAY_TOKEN "
+                "(and BODHI_LLM_TRACE_USER_ID) in .env, or set USE_BODHI_LLM_GATEWAY=false "
+                "to use Gemini instead."
+            )
+    else:
+        vertex_ready = bool(settings.google_cloud_project) and (
+            settings.google_auth_mode == "adc"
+            or (settings.google_auth_mode == "auto" and settings.google_genai_use_vertexai)
         )
+        api_key_ready = bool(settings.google_api_key)
+        configured = vertex_ready or (settings.google_auth_mode != "adc" and api_key_ready)
+        mode_label = "adc/vertex" if vertex_ready else ("token/api_key" if api_key_ready else settings.google_auth_mode)
+        print(f"LLM backend : Google Gemini ({mode_label}) "
+              f"({'connected' if configured else 'NOT CONFIGURED'})")
+        print(f"Model       : {settings.google_model}")
+        if not configured:
+            raise RuntimeError(
+                "Gemini is not configured — set GOOGLE_API_KEY in .env (GOOGLE_AUTH_MODE=token), "
+                "or GOOGLE_CLOUD_PROJECT with GOOGLE_AUTH_MODE=adc for Vertex AI, "
+                "or set USE_BODHI_LLM_GATEWAY=true to route through Bodhi instead."
+            )
+    print(f"Tracing     : {'LangSmith (connected)' if observability.enabled else 'disabled (set LANGSMITH_API_KEY to enable)'}")
 
     # 1. Load profile + memory --------------------------------------------------
     profile = load_profile(settings.profile_path)

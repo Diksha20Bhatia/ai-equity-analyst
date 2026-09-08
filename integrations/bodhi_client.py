@@ -208,7 +208,13 @@ def call_bodhi_workflow(
     variables: Dict[str, Any],
     poll_interval: float = 5,
     timeout: float = 300,
-) -> str:
+) -> tuple:
+    """Returns (answer_text, run_id). The run id is Bodhi's own real run
+    identifier — the same UUID you'd see if you opened this run from the
+    workflow's run list in the Bodhi UI and copied it by hand. Returning
+    it here (instead of letting it disappear once start_bodhi_run() is
+    done with it) means every caller gets it for free, without needing to
+    dig into Bodhi's UI to find which run just happened."""
     run_id = start_bodhi_run(base_url, pat_token, task_id, workflow_id, trace_prefix, variables)
     result = poll_bodhi_run(base_url, pat_token, task_id, run_id, trace_prefix, poll_interval, timeout)
-    return extract_bodhi_answer(result)
+    return extract_bodhi_answer(result), run_id

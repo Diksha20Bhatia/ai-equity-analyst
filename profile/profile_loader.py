@@ -2,12 +2,13 @@
 profile_loader.py  —  "Your preferences, in any format"
 =======================================================
 Reads an investor profile from .txt / .md / .pdf / .html / .docx / .xlsx,
-then uses Gemini to normalise the messy text into ONE clean structured
-object the Decision Agent can act on. If Gemini is unavailable it does a
-light keyword-based extraction instead.
+then uses the active LLM backend (Gemini by default, or Bodhi's LLM
+Gateway if USE_BODHI_LLM_GATEWAY=true) to normalise the messy text into
+ONE clean structured object the Decision Agent can act on. If that call
+fails, it does a light keyword-based extraction instead.
 
 A .json profile is treated as ALREADY structured (e.g. built from the
-dashboard's dropdown form) and loaded directly — no Gemini call needed,
+dashboard's dropdown form) and loaded directly — no AI call needed,
 which is also a free win for the app's token budget.
 
 Returned shape:
@@ -25,7 +26,7 @@ Returned shape:
 
 import os
 import json
-from config import client, settings
+from config import call_llm
 
 
 # ---------------------------------------------------------------------
@@ -87,11 +88,10 @@ def _read_text(path: str) -> str:
 # ---------------------------------------------------------------------
 # Step 2: turn raw text into a structured profile object.
 # ---------------------------------------------------------------------
-def _structure_with_gemini(raw: str) -> dict:
-    if client is None or not raw.strip():
+def _structure_with_llm(raw: str) -> dict:
+    if not raw.strip():
         return {}
     try:
-        from google.genai import types
         prompt = (
             "Read this investor profile and extract the fields below. "
             "If a field is missing, use a sensible default or empty list. "
@@ -104,20 +104,13 @@ def _structure_with_gemini(raw: str) -> dict:
             '"investment_horizon": "short/medium/long", '
             '"sector_preferences": [..], "sector_exclusions": [..], "constraints": "string"}'
         )
-        resp = client.models.generate_content(
-            model=settings.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json",
-            ),
-        )
-        text = (resp.text or "").strip().strip("`")
+        text, _usage = call_llm(prompt=prompt, temperature=0.1, json_mode=True)
+        text = text.strip().strip("`")
         if "{" in text:
             text = text[text.find("{"):]
         return json.loads(text)
     except Exception as e:  # noqa: BLE001
-        print(f"[profile] Gemini structuring failed, using keyword fallback. ({e})")
+        print(f"[profile] LLM structuring failed, using keyword fallback. ({e})")
         return {}
 
 
@@ -158,13 +151,13 @@ def load_profile(path: str) -> dict:
             structured = json.load(f)
         risk_label = "/".join(structured.get("risk_appetites") or [structured.get("risk_appetite", "?")])
         print(f"[profile] loaded pre-structured profile ({risk_label} risk) "
-              "— no Gemini call needed.")
+              "— no AI call needed.")
         return structured
 
     raw = _read_text(path)
     if not raw.strip():
         return {}
-    structured = _structure_with_gemini(raw)
+    structured = _structure_with_llm(raw)
     if not structured:
         structured = _structure_with_keywords(raw)
     print(f"[profile] loaded profile ({structured.get('risk_appetite','?')} risk).")

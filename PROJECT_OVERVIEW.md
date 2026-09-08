@@ -6,9 +6,11 @@
 
 ## 1. What is this, in one paragraph
 
-We built an AI-powered research assistant for the Indian stock market (NSE). Every morning it scans up to 500 stocks, does the same kind of number-crunching a junior analyst would do (price trends, financial health, risk), reads the real news headlines, and hands back a short, reasoned list of 2–3 stocks worth a closer look — with the reasoning shown, not hidden. It also has a second, separate mode that watches a stock **during the trading day** for a real breakout in price. Everything it looks at is real market data; there is no demo mode and no made-up numbers anywhere.
+**This is an internal Publicis Sapient engineering project** — a reference pattern for building a real, multi-agent, tool-using AI system (not a toy demo), built against the Indian stock market (NSE) as a genuinely hard, data-rich domain to prove the pattern on. Every morning it scans up to 500 stocks, does the same kind of number-crunching a junior analyst would do (price trends, financial health, risk), reads the real news headlines, and hands back a short, reasoned list of 2–3 stocks worth a closer look — with the reasoning shown, not hidden. It also has a second, separate mode that watches a stock **during the trading day** for a real breakout in price. Everything it looks at is real market data; there is no demo mode and no made-up numbers anywhere.
 
 **The one thing worth remembering:** this is not a chatbot and not an auto-trader. It's a workflow — *look at real data → reason about it → hand you a short, explained shortlist* — and a human still makes every decision.
+
+**Who benefits, and how we know it's working.** The direct beneficiary is the PS engineering team itself: this codebase is the worked example new engineers point to for multi-agent design, Bodhi Gateway routing, MCP tool use, and Bodhi Workflow Builder authoring — cutting the ramp-up time for the next agentic project. Because it also produces real, checkable output, we hold ourselves to a concrete, honestly-reported success measure rather than a subjective one: `tracker/quality_report.py` reads back every stock this tool has ever picked and computes real win-rate and average price change since each pick was made, with zero AI involved in the measurement itself. The most recent run: **11 tracked picks, 0% win rate, -2.38% average change since listing.** We report that number as-is — a genuine, non-cherry-picked measurement is the whole point of building the tracker, and it's exactly the kind of evidence trail an internal reference pattern should have baked in from day one.
 
 ---
 
@@ -26,7 +28,7 @@ We don't read the market ourselves and ask one big AI to "figure it out." Instea
 
 ```mermaid
 flowchart TB
-    subgraph Inputs["Real-world data — free, no signup needed (except Gemini)"]
+    subgraph Inputs["Real-world data — free, no signup needed (except the Bodhi LLM Gateway)"]
         YF["Yahoo Finance<br/>prices & company financials"]
         GN["Google News<br/>real headlines"]
         NSE["NSE India<br/>official stock lists"]
@@ -34,7 +36,7 @@ flowchart TB
 
     subgraph Team["The Research Team — 10 specialists"]
         Calc["5 Calculators<br/>pure maths, zero AI cost"]
-        Think["5 Thinkers<br/>use Google Gemini AI"]
+        Think["5 Thinkers<br/>use Bodhi's LLM Gateway"]
     end
 
     subgraph Outputs["Delivered to you"]
@@ -160,15 +162,15 @@ All 50 stocks get scored this way. The ~10 with the *highest* scores become the 
 - `agents/risk_agent.py` ("The Skeptic") scores how risky it looks right now (0–10) — how much it swings day to day, and how **liquid** it is (liquid = how easily a large position could be sold without moving the price against you).
 
 **Step 6 — Understand the real news — the first AI call.** File: `agents/sentiment_agent.py`, "News/Event Reader."
-This is the *first* time real, paid AI (Google's Gemini) gets used. It's handed the real headlines already fetched in Step 3, for **all ~10 shortlisted stocks together** in one single request (not 10 separate ones — this keeps the AI cost low), and asked: "what actually happened, and is it good or bad news?" For Reliance it might come back with something like: *positive news, about a new business deal, moderately important.*
+This is the *first* time real, paid AI (routed through Bodhi's LLM Gateway) gets used. It's handed the real headlines already fetched in Step 3, for **all ~10 shortlisted stocks together** in one single request (not 10 separate ones — this keeps the AI cost low), and asked: "what actually happened, and is it good or bad news?" For Reliance it might come back with something like: *positive news, about a new business deal, moderately important.*
 
 **Step 7 — Check what changed since last time.** File: `memory/memory_layer.py`. Zero AI.
 If we looked at Reliance in a previous run (say, yesterday), this pulls up the real price and scores from that time and computes a genuine before/after comparison — e.g. *"yesterday: ₹2,900, Technical score 6 → today: ₹2,980 (+2.8%), Technical score 7."*
 
 **Step 8 — The Manager makes the final call — the second AI call.** File: `agents/decision_agent.py`, "The Manager."
-Gemini is given, for Reliance and every other shortlisted stock together: all the real scores from Steps 5–7, the real Nifty 50 context from Step 2, and your own investor profile (how much risk you're comfortable with, how much capital you have). It's asked to write a **bull case** (bull case = the reasons to be optimistic about this stock) and a **bear case** (bear case = the reasons it could go wrong), an overall stance (accumulate more / hold / avoid), and a reference target price.
+The Decision Manager, via Bodhi's LLM Gateway, is given, for Reliance and every other shortlisted stock together: all the real scores from Steps 5–7, the real Nifty 50 context from Step 2, and your own investor profile (how much risk you're comfortable with, how much capital you have). It's asked to write a **bull case** (bull case = the reasons to be optimistic about this stock) and a **bear case** (bear case = the reasons it could go wrong), an overall stance (accumulate more / hold / avoid), and a reference target price.
 
-Two things Gemini is deliberately **not** asked to decide: how many shares to buy, and how to split your money across your different picks. Both are worked out afterward by plain code, from your own real stated budget — never guessed by the AI.
+Two things the AI is deliberately **not** asked to decide: how many shares to buy, and how to split your money across your different picks. Both are worked out afterward by plain code, from your own real stated budget — never guessed by the AI.
 
 **Step 9 — Send it to you.** Files: `run.py` + `alerts/telegram_alert.py` (+ two optional outputs).
 The finished shortlist — including Reliance, if it made the cut — is sent to your Telegram and saved to a file, and today's real scores are stored so tomorrow's run can compare against them in Step 7. Two more things happen here: a running Excel workbook always gets updated (see §7 below), and — only if you've turned it on — the picks get pushed to a real TradingView watchlist.
@@ -200,7 +202,7 @@ flowchart TB
         Yahoo[("Yahoo Finance")]
         News[("Google News RSS")]
         NSEArc[("NSE Archives")]
-        Gemini[("Google Gemini — AI")]
+        Gemini[("Bodhi LLM Gateway — AI")]
         Telegram[("Telegram Bot API")]
         LS[("LangSmith — optional")]
         TV[("TradingView Desktop<br/>optional, local only")]
@@ -298,7 +300,7 @@ This is where the project stops being self-contained: with `BODHI_ENABLED=true`,
 
 | Source | What it gives us | Cost |
 |---|---|---|
-| **Google Gemini** | The actual AI reasoning — news interpretation and the final decision | 💰 Paid (pay-per-use, ~2 calls/run) |
+| **Bodhi LLM Gateway** | The actual AI reasoning — news interpretation and the final decision, routed through Bodhi rather than any direct provider SDK | 💰 Paid (pay-per-use, ~2 calls/run) |
 | **Yahoo Finance** | Real daily/intraday prices, volume, and company financials | Free, no key |
 | **Google News** | Real, current headlines per stock | Free, no key |
 | **NSE India (official archives)** | The exact list of which companies are in the Nifty 50 / Nifty 500 today | Free, no key |
@@ -307,7 +309,7 @@ This is where the project stops being self-contained: with `BODHI_ENABLED=true`,
 | **TradingView Desktop** | Optional: real watchlist push, local-only, zero credentials | Free (needs your own TradingView account) |
 | **Bodhi** | Optional: an extra, external AI risk read on today's real shortlist | Depends on your Bodhi account/plan (PAT token) |
 
-**In short: only two things cost money — the AI calls to Gemini, and, if turned on, the optional Bodhi Risk Insight — and everything else feeding into the analysis is free, public data, or runs entirely on your own machine.** ChromaDB (our "memory") and the Excel workbook also run entirely locally, no cost, no external service.
+**In short: only two things cost money — the AI calls routed through Bodhi's LLM Gateway, and, if turned on, the optional Bodhi Risk Insight — and everything else feeding into the analysis is free, public data, or runs entirely on your own machine.** ChromaDB (our "memory") and the Excel workbook also run entirely locally, no cost, no external service.
 
 ---
 
@@ -333,7 +335,7 @@ This gives us the ability to audit, cost-track, and debug every AI decision afte
 
 ## 12. Quick glossary
 
-- **LLM / AI call** — one request sent to Google's Gemini model, the only step in this system that costs money and "thinks" rather than calculates.
+- **LLM / AI call** — one request sent through Bodhi's LLM Gateway, the only step in this system that costs money and "thinks" rather than calculates.
 - **Batched call** — one AI request that covers *every* stock on the watchlist at once, instead of one request per stock.
 - **Swing vs. Intraday** — Swing = ideas meant to be held for days/weeks, based on a year of history. Intraday = same-day price action only, meaningless once the market closes.
 - **Conviction (HIGH/LOW)** — not an opinion; a fixed rule. HIGH means the data lines up cleanly; LOW means treat it as a watch-list idea, not a strong call.

@@ -44,3 +44,35 @@ if not enabled:
             return func
 
         return decorator
+
+
+# ---------------------------------------------------------------------
+# Always-on structured failure telemetry — separate from LangSmith above
+# (which only covers AI calls, and only when configured). This always
+# runs, needs no setup, and is what a "why did this fail" question would
+# actually be answered from — every Bodhi Gateway retry, timeout, and
+# integration failure across a run, not just a console print that
+# scrolls away.
+# ---------------------------------------------------------------------
+import json
+import datetime as dt
+from pathlib import Path
+
+_FAILURE_LOG = Path(__file__).resolve().parent / "output" / "reliability_log.jsonl"
+
+
+def record_failure(component: str, detail: str, **extra) -> None:
+    """Appends one structured failure record. Never raises — a logging
+    hiccup must never break the real failure path it's recording."""
+    try:
+        _FAILURE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "timestamp": dt.datetime.now().isoformat(timespec="seconds"),
+            "component": component,
+            "detail": str(detail),
+            **extra,
+        }
+        with open(_FAILURE_LOG, "a") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+    except Exception:  # noqa: BLE001
+        pass

@@ -3,11 +3,14 @@ base_agent.py
 =============
 Every specialist agent inherits from BaseAgent.
 
-It gives them ONE shared skill: "ask Gemini a question and get JSON back".
-If Gemini isn't configured or the call fails, this raises instead of
-silently degrading — callers see the real error.
+It gives them ONE shared skill: "ask the model a question and get JSON
+back". Every call goes through config.call_llm() — Google Gemini by
+default, or Bodhi's LLM Gateway if USE_BODHI_LLM_GATEWAY=true in .env —
+the single entry point for AI in this app. If the active backend isn't
+configured or the call fails, this raises instead of silently degrading —
+callers see the real error.
 
-Every real Gemini call is traced to LangSmith (observability.py) when
+Every real model call is traced to LangSmith (observability.py) when
 LANGSMITH_API_KEY is set — the actual prompt, response, latency, and real
 token usage for every AI call in the whole run, nested under whichever
 agent made it. If tracing isn't configured, @traceable is a no-op and
@@ -15,7 +18,7 @@ nothing here changes.
 """
 
 import json
-from config import client, settings
+from config import call_llm, settings
 import observability
 from observability import traceable
 
@@ -25,40 +28,28 @@ class BaseAgent:
     name = "Base Agent"
     system_instruction = "You are a helpful financial analysis assistant."
 
-    @traceable(run_type="llm", name="Gemini call")
+    @traceable(run_type="llm", name="LLM call")
     def ask_json(self, prompt: str, temperature: float = 0.3) -> dict:
-        """Send `prompt` to Gemini and parse the reply as JSON."""
-        if client is None:
-            raise RuntimeError(
-                f"[{self.name}] Gemini is not configured. Check GOOGLE_AUTH_MODE, "
-                "GOOGLE_API_KEY, or your Google Cloud ADC login in .env."
-            )
-
-        from google.genai import types
-
-        response = client.models.generate_content(
-            model=settings.model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=self.system_instruction,
-                temperature=temperature,
-                response_mime_type="application/json",
-            ),
+        """Send `prompt` to the active LLM backend and parse the reply as JSON."""
+        text, usage = call_llm(
+            prompt=prompt,
+            system_instruction=self.system_instruction,
+            temperature=temperature,
+            json_mode=True,
         )
-        self._trace_call_details(response)
-        text = (response.text or "").strip()
+        self._trace_call_details(usage)
         # Strip accidental ```json fences if the model adds them.
         if text.startswith("```"):
             text = text.strip("`")
             text = text[text.find("{"):] if "{" in text else text
         return json.loads(text)
 
-    def _trace_call_details(self, response) -> None:
+    def _trace_call_details(self, usage: dict) -> None:
         """
         Best-effort: label this LLM run with the calling agent's name and
-        attach the real token counts Gemini reports, so LangSmith shows
-        actual cost/usage per call — never lets a tracing hiccup break the
-        real agent call it's wrapping.
+        attach the real token counts the gateway reports, so LangSmith
+        shows actual cost/usage per call — never lets a tracing hiccup
+        break the real agent call it's wrapping.
         """
         if not observability.enabled:
             return
@@ -67,13 +58,13 @@ class BaseAgent:
             run = get_current_run_tree()
             if not run:
                 return
-            run.name = f"{self.name} — Gemini call"
-            usage = getattr(response, "usage_metadata", None)
+            backend = "Bodhi LLM Gateway" if settings.use_bodhi_llm_gateway else "Gemini"
+            run.name = f"{self.name} — {backend} call"
             if usage:
                 run.metadata["usage_metadata"] = {
-                    "input_tokens": getattr(usage, "prompt_token_count", None),
-                    "output_tokens": getattr(usage, "candidates_token_count", None),
-                    "total_tokens": getattr(usage, "total_token_count", None),
+                    "input_tokens": usage.get("prompt_tokens"),
+                    "output_tokens": usage.get("completion_tokens"),
+                    "total_tokens": usage.get("total_tokens"),
                 }
         except Exception:  # noqa: BLE001
             pass

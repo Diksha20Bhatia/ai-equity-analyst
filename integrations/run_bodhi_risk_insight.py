@@ -60,6 +60,8 @@ def run():
     telegram_alert.send("*🧠 Bodhi Risk Insight*\n\n" + result["report"])
 
     print("\n" + result["report"])
+    print(f"\n[bodhi] run id: {result['run_id']}"
+          "  <- open this run in Bodhi's workflow run list to inspect it directly")
 
 
 if __name__ == "__main__":
