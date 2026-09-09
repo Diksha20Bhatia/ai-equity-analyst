@@ -5,10 +5,14 @@ risk-verification pass before it goes out to Telegram/TradingView
 Sends today's real, deduped shortlist (every field the Decision Agent
 actually produced — bull/bear case, opportunity score, target price,
 ₹ allocation, sector) to a confirmed-working, custom-built Bodhi
-workflow: Start Node -> Risk Analyst Agent (does live web research per
-stock via the bodhi-deep-research MCP tool) -> Contrarian Agent (red-team
-review of the Risk Analyst's findings) -> End Node, and pulls a
-per-symbol verdict out of the Contrarian's answer.
+workflow (see integrations/bodhi_workflow/README.md for the full graph
+and two real, verified run IDs): Start Node -> Risk Analyst Agent (live
+web research per stock via the bodhi-deep-research MCP tool) ->
+Contrarian Agent (red-team review) -> a real conditional branch that only
+escalates to a second, deeper Escalation Analyst pass when the
+Contrarian actually flagged a concern -> a combine step -> End Node, and
+pulls a per-symbol verdict out of the final (possibly escalated)
+answer.
 
 Sends TWO variables directly to the workflow's Start Node / Workflow
 Variables (names set by BODHI_PORTFOLIO_VARIABLE / BODHI_QUERY_VARIABLE —
@@ -38,8 +42,10 @@ import json
 import re
 from pathlib import Path
 
+import observability
 from config import settings
 from integrations.bodhi_client import call_bodhi_workflow
+from schemas import BodhiVerdictItem, ValidationError
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 
@@ -94,11 +100,97 @@ def _query_text() -> str:
     )
 
 
+# Real phrases seen in a live run when the Escalation Analyst's MCP
+# research tool actually failed mid-run (a misconfigured tool credential)
+# but the agent still produced valid JSON output rather than crashing —
+# exactly the graceful-degradation behavior its prompt asks for. This
+# catches that case on the Python side so it's visible, not silent.
+_DEGRADED_RESEARCH_PHRASES = (
+    "technical error", "technical errors", "invalid model configuration",
+    "unable to access", "tool unavailable", "could not verify",
+    "research tool unavailable", "encountered an error",
+)
+
+
+def _detect_research_degraded(report: str) -> bool:
+    """Real failure-path detection, not just a happy-path parse: flags
+    when the workflow's own agents reported a tool/research failure in
+    their final text, so a degraded-quality answer is never silently
+    treated the same as a fully-researched one."""
+    lower = (report or "").lower()
+    return any(phrase in lower for phrase in _DEGRADED_RESEARCH_PHRASES)
+
+
+# The real, documented operator-visible signal that the escalation
+# branch fired (see integrations/bodhi_workflow/README.md, "What an
+# operator actually sees, step by step" — item 4): the Escalation
+# Analyst's own framing, distinct from the Contrarian's original text.
+_ESCALATION_FRAMING_PHRASES = (
+    "based on the deeper review", "deeper review of the contrarian",
+    "escalation analyst", "further research into the flagged",
+)
+
+
+def _detect_escalation_branch(report: str) -> bool:
+    """Which of the workflow's two real branch outcomes produced this
+    report — the clean (non-escalation) path passes the Contrarian's
+    text straight through Set Combine Final Verdict, the escalated path
+    replaces it with the Escalation Analyst's own framing. Both are real,
+    documented shapes (see tests/test_scenario_bodhi_branches.py); this
+    makes which one fired reviewer-visible instead of only inferable
+    from reading the full report text by hand."""
+    lower = (report or "").lower()
+    return any(phrase in lower for phrase in _ESCALATION_FRAMING_PHRASES)
+
+
+# A model paraphrasing instead of using the three exact documented words
+# ("Avoid — high risk", "caution: exit position", "Clear.") is a REPAIR
+# case, not a drop case: the real intent is unambiguous from a keyword
+# match, so normalize it to the exact literal schemas.BodhiVerdictItem
+# requires before validating, instead of discarding real signal just
+# because the model didn't use the precise enum word. Checked in this
+# order — "avoid" and "caution" first — since a phrase like "not clear
+# to avoid caution" should never resolve to "clear".
+_VERDICT_REPAIR_KEYWORDS = (("avoid", "avoid"), ("caution", "caution"), ("clear", "clear"))
+
+
+def _repair_verdict_value(raw_value) -> str | None:
+    """Best-effort normalization of an out-of-enum verdict string to one
+    of the three schemas.BodhiVerdictItem accepts, by keyword match.
+    Returns None if no known keyword is found — that item still gets
+    dropped, just not silently confused with a successful repair."""
+    if not isinstance(raw_value, str):
+        return None
+    lower = raw_value.lower()
+    for keyword, normalized in _VERDICT_REPAIR_KEYWORDS:
+        if keyword in lower:
+            return normalized
+    return None
+
+
 def _parse_verdicts(answer_text: str) -> dict | None:
     """Best-effort: find a JSON array of {"symbol", "verdict", ...} objects
     anywhere in Bodhi's answer text. Returns {symbol: {"verdict", "notes"}},
     or None if nothing that shape could be found — callers must treat None
-    as "no verdict available", not as "everything's clear"."""
+    as "no verdict available", not as "everything's clear".
+
+    Every candidate item is validated against schemas.BodhiVerdictItem —
+    this is the workflow-to-code boundary the certification's own review
+    flagged as needing a more explicit, hardened handoff contract, and
+    "repaired or retried where they are consumed, not only validated
+    later downstream." Two passes, in order:
+      1. REPAIR — a "verdict" value outside the exact clear/caution/avoid
+         set is checked for one of those words as a substring (see
+         _repair_verdict_value) and normalized before validating, so a
+         model's paraphrase isn't discarded when its real intent is
+         unambiguous.
+      2. DROP — an item that still doesn't validate after the repair
+         attempt (an unrecognisable verdict, a missing symbol) is logged
+         and skipped — a malformed entry silently reaching the
+         TradingView exclusion filter is worse than treating that one
+         symbol as unverified.
+    A repaired item is logged distinctly from a dropped one, so the two
+    are never confused when reading output/reliability_log.jsonl."""
     candidates = re.findall(r"\[[^\[\]]*\{.*?\}[^\[\]]*\]", answer_text, re.DOTALL)
     candidates += re.findall(r"\{.*\}", answer_text, re.DOTALL)
 
@@ -114,11 +206,37 @@ def _parse_verdicts(answer_text: str) -> dict | None:
 
         verdicts = {}
         for item in items:
-            if isinstance(item, dict) and item.get("symbol") and item.get("verdict"):
-                verdicts[item["symbol"]] = {
-                    "verdict": str(item["verdict"]),
-                    "notes": str(item.get("notes", "")),
-                }
+            if not isinstance(item, dict):
+                continue
+            try:
+                validated = BodhiVerdictItem.model_validate(item)
+            except ValidationError as first_error:
+                repaired_verdict = _repair_verdict_value(item.get("verdict"))
+                if repaired_verdict is None:
+                    observability.record_failure(
+                        "bodhi_verdict_shape",
+                        f"dropped one verdict item that didn't match the documented shape "
+                        f"(schemas.BodhiVerdictItem) and couldn't be repaired: {first_error}",
+                        raw_item=str(item)[:200],
+                    )
+                    continue
+                try:
+                    validated = BodhiVerdictItem.model_validate({**item, "verdict": repaired_verdict})
+                except ValidationError as second_error:
+                    observability.record_failure(
+                        "bodhi_verdict_shape",
+                        f"dropped one verdict item — repair to '{repaired_verdict}' still didn't "
+                        f"validate: {second_error}",
+                        raw_item=str(item)[:200],
+                    )
+                    continue
+                observability.record_failure(
+                    "bodhi_verdict_repaired",
+                    f"repaired a verdict value to the documented enum by keyword match: "
+                    f"{item.get('verdict')!r} -> {repaired_verdict!r}",
+                    raw_item=str(item)[:200],
+                )
+            verdicts[validated.symbol] = {"verdict": validated.verdict, "notes": validated.notes}
         if verdicts:
             return verdicts
 
@@ -141,8 +259,23 @@ def verify_shortlist(results_by_tier: dict, analyses: list) -> dict:
                          list in the Bodhi UI and copying it by hand —
                          printed to the terminal below so you don't have
                          to.
+      research_degraded -- True if the report's own text indicates the
+                         MCP research tool failed mid-run (a real
+                         failure-path detection — the workflow's agents
+                         degrade gracefully rather than crash, but a
+                         degraded, reasoning-only answer should never be
+                         silently treated the same as a freshly-researched
+                         one). Logged to output/reliability_log.jsonl too.
+      escalation_branch_fired -- True if this report shows the real,
+                         documented signal that the graph's escalation
+                         branch ran (the Escalation Analyst's own framing
+                         replacing the Contrarian's original text) rather
+                         than the clean/non-escalation path. See
+                         tests/test_scenario_bodhi_branches.py for both
+                         real shapes exercised directly.
     """
-    empty = {"ran": False, "report": None, "verdicts": None, "flagged_symbols": set(), "run_id": None}
+    empty = {"ran": False, "report": None, "verdicts": None, "flagged_symbols": set(),
+             "run_id": None, "research_degraded": False, "escalation_branch_fired": False}
     if not settings.bodhi_enabled:
         return empty
 
@@ -185,6 +318,21 @@ def verify_shortlist(results_by_tier: dict, analyses: list) -> dict:
     out_path.write_text(report)
     print(f"[bodhi] saved report -> {out_path}")
 
+    escalated = _detect_escalation_branch(report)
+    print(f"[bodhi] branch outcome: {'escalated (deeper review ran)' if escalated else 'clean (no escalation needed)'}")
+
+    degraded = _detect_research_degraded(report)
+    if degraded:
+        observability.record_failure(
+            "bodhi_research_degraded",
+            "the workflow's own final text indicates its MCP research tool "
+            "failed mid-run (graceful degradation, not a crash) — verdicts "
+            "below may be reasoning-only, not freshly researched",
+            run_id=run_id,
+        )
+        print("[bodhi] ⚠ this run's report indicates the research tool degraded "
+              "mid-run — verdicts may be reasoning-only, not freshly researched")
+
     verdicts = _parse_verdicts(report)
     flagged = set()
     if verdicts:
@@ -197,4 +345,5 @@ def verify_shortlist(results_by_tier: dict, analyses: list) -> dict:
         print("[bodhi] no structured per-symbol verdict found in the answer — "
               "nothing will be filtered from TradingView; see the full report in Telegram")
 
-    return {"ran": True, "report": report, "verdicts": verdicts, "flagged_symbols": flagged, "run_id": run_id}
+    return {"ran": True, "report": report, "verdicts": verdicts, "flagged_symbols": flagged,
+            "run_id": run_id, "research_degraded": degraded, "escalation_branch_fired": escalated}

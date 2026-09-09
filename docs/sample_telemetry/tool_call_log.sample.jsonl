@@ -1,0 +1,2 @@
+{"timestamp": "2026-09-08T19:17:25", "tool": "tradingview_live_quote", "target": "NSE:RELIANCE", "success": true, "latency_ms": 21870.4, "agent": "Decision Agent"}
+{"timestamp": "2026-09-08T19:17:25", "tool": "tradingview_symbol_search", "target": "RELIANCE", "success": true, "latency_ms": 740.1, "agent": "Decision Agent"}

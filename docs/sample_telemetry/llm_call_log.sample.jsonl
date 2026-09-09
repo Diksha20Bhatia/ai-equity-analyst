@@ -1,0 +1,4 @@
+{"timestamp": "2026-09-08T19:17:25", "backend": "bodhi_llm_gateway", "model": "gemini-2.5-pro", "agent": "News/Event Reader", "latency_ms": 1180.4, "prompt_tokens": 2100, "completion_tokens": 340, "total_tokens": 2440, "attempts": 1}
+{"timestamp": "2026-09-08T19:17:25", "backend": "bodhi_llm_gateway", "model": "gemini-2.5-pro", "agent": "Bull Case Agent", "latency_ms": 2350.7, "prompt_tokens": 3200, "completion_tokens": 510, "total_tokens": 3710, "attempts": 1}
+{"timestamp": "2026-09-08T19:17:25", "backend": "bodhi_llm_gateway", "model": "gemini-2.5-pro", "agent": "Bear Case Agent", "latency_ms": 2410.2, "prompt_tokens": 3150, "completion_tokens": 495, "total_tokens": 3645, "attempts": 1}
+{"timestamp": "2026-09-08T19:17:25", "backend": "bodhi_llm_gateway", "model": "gemini-2.5-pro", "agent": "Decision Agent", "latency_ms": 3980.9, "prompt_tokens": 5400, "completion_tokens": 820, "total_tokens": 6220, "attempts": 1}

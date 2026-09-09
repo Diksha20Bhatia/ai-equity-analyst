@@ -1,0 +1,2 @@
+{"timestamp": "2026-09-08T19:17:25", "tier": "moderate", "retries_so_far": 0, "issues_found": ["shape: shortlist.0.bear_case \u2014 String should have at least 1 character"], "next_step": "retry_decision", "reason": "a required field was missing \u2014 fixable from the same real data"}
+{"timestamp": "2026-09-08T19:17:25", "tier": "moderate", "retries_so_far": 1, "issues_found": [], "next_step": "finish", "reason": "quality check passed \u2014 no issues found"}

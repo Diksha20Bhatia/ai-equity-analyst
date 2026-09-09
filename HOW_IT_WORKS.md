@@ -2,7 +2,7 @@
 
 This document explains, in plain English, **exactly** what happens when you
 run `python run.py` (the daily swing scan) or `python intraday_run.py` (the
-same-day scanner): which files run, which ones call Google's Gemini AI,
+same-day scanner): which files run, which ones call Bodhi's LLM Gateway,
 which ones are just doing arithmetic, which real websites/APIs get hit, and
 what formula produces every number you see. If [README.md](README.md) is
 the map, this is the guided tour with a magnifying glass.
@@ -28,7 +28,7 @@ final decision**.
 ```mermaid
 flowchart TB
     subgraph External["🌐 External services"]
-        Gemini[("Google Gemini")]
+        Bodhi[("Bodhi LLM Gateway")]
         Yahoo[("Yahoo Finance")]
         GNews[("Google News RSS")]
         NSEArc[("NSE archives")]
@@ -41,9 +41,11 @@ flowchart TB
         Signals["data/signals.py"]
         MktCtx["data/market_context.py"]
         ZeroAI["4 zero-AI agents"]
-        EventDecision["News/Event Reader +<br/>Decision Agent"]
+        EventDecision["News/Event Reader +<br/>Bull/Bear Case Agents +<br/>Decision Agent (orchestrated)"]
+        Guardrail["safety/verification_guardrail.py"]
         Excel["alerts/excel_report.py"]
         TVAlert["alerts/tradingview_watchlist.py"]
+        ApprovalSvc["service/approval_service.py<br/>(separate microservice)"]
     end
     subgraph IntraApp["Intraday pipeline (intraday_run.py)"]
         IntraData["data/intraday_data.py"]
@@ -62,13 +64,15 @@ flowchart TB
     IntraData --> IntraSignals --> IntraAgent
     ZeroAI --> EventDecision
     IntraAgent --> Narrator
-    Gemini --> EventDecision & Sentinel & Narrator
-    EventDecision --> Excel & TVAlert
+    Bodhi --> EventDecision & Sentinel & Narrator
+    EventDecision --> Guardrail --> Excel
+    Guardrail -.->|saved PENDING, not sent yet| ApprovalSvc
+    ApprovalSvc -->|human approves| TVAlert & TG
     TVAlert --> TV
     Excel --> Dashboard
     Tracker -.->|appends dated price columns| Excel
     EventDecision & Narrator --> Dashboard
-    Gemini -.->|every call traceable| LS
+    Bodhi -.->|every call traceable| LS
 ```
 
 **What each box actually is, in plain words:**
@@ -84,12 +88,13 @@ flowchart TB
 - **NSE archives** — the National Stock Exchange of India publishes plain
   spreadsheet files (CSVs) listing exactly which 50 (or 500) companies are
   in the Nifty 50/500 index today. We download those directly.
-- **Google Gemini** — the actual AI model. This is the only paid/keyed
-  service, and the only one that "thinks" rather than just fetching facts.
+- **Bodhi LLM Gateway** — the one governed entry point every AI call in
+  this app goes through. This is the only paid/keyed service, and the
+  only one that "thinks" rather than just fetching facts.
 - **Telegram** — a messaging app; its "Bot API" lets a program send you a
   chat message. Optional — only used if you set up a bot.
 - **LangSmith** — an optional monitoring tool. If you turn it on, every
-  real Gemini call and every pipeline step gets logged as a visual trace
+  real Bodhi LLM Gateway call and every pipeline step gets logged as a visual trace
   you can inspect after the fact — the exact prompt, the exact response,
   how long it took, how many tokens it used. Entirely opt-in; the app
   behaves identically whether it's on or off.
@@ -121,11 +126,26 @@ flowchart TB
 - **The zero-AI agents** — Research (Scout), Fundamental (Analyst),
   Technical (Chart Reader), Risk (Skeptic), and the Intraday Agent (Day
   Trader). Each is a plain Python file with a scoring formula. Zero calls
-  to Gemini.
-- **The AI-calling agents** — News/Event Reader and Decision Agent
-  (swing pipeline), Data Sentinel and Narrator (intraday pipeline), plus
-  an optional Scorekeeper for end-of-day backtesting. These are the only
-  places the app pays for and waits on an AI response.
+  to Bodhi's LLM Gateway.
+- **The AI-calling agents** — News/Event Reader, Bull Case Agent, Bear
+  Case Agent, and Decision Agent (swing pipeline — see Part 2 for how
+  these four fit together, and why there are 5 boxes' worth of agents
+  packed into the "EventDecision" diagram box above), Data Sentinel and
+  Narrator (intraday pipeline), plus an optional Scorekeeper for
+  end-of-day backtesting. These are the only places the app pays for and
+  waits on an AI response.
+- **`safety/verification_guardrail.py`** — sits right after the Decision
+  Agent's output is final, before anything is stored or published. A
+  DETERMINISTIC (zero AI) circuit-breaker: if two independent, non-LLM
+  tools (TradingView's symbol search and this project's own local MCP
+  server) BOTH failed to confirm a shortlisted symbol is a real, tradeable
+  NSE equity, this forcibly overrides that pick to "avoid" and caps its
+  confidence — regardless of how confidently the AI argued for it. See
+  Part 3's Step 7B for a worked example.
+- **`service/approval_service.py`** — a genuinely SEPARATE, independently
+  deployable microservice (its own process, its own `Dockerfile`) that
+  exposes the same approve/reject/publish logic as `approve_run.py` (the
+  CLI) and `dashboard.py`'s sidebar over plain HTTP — see Part 3G.
 - **`run.py`** / **`intraday_run.py`** — "the conductors." Call everything
   above in order and glue the results together.
 - **`dashboard.py`** — a web page (built with Streamlit) that shows you the
@@ -135,25 +155,39 @@ flowchart TB
 
 ## Part 2 — Which agent calls AI, and which is just math
 
-| Agent | File | Pipeline | Calls Gemini? | How many times per run |
+| Agent | File | Pipeline | Calls Bodhi's LLM Gateway? | How many times per run |
 |---|---|---|---|---|
 | Research Agent (Scout) | `agents/research_agent.py` | Swing | ❌ No | 0 |
 | Fundamental Agent (Analyst) | `agents/fundamental_agent.py` | Swing | ❌ No | 0 |
 | Technical Agent (Chart Reader) | `agents/technical_agent.py` | Swing | ❌ No | 0 |
 | Risk Agent (Skeptic) | `agents/risk_agent.py` | Swing | ❌ No | 0 |
 | News/Event Reader | `agents/sentiment_agent.py` | Swing | ✅ Yes | **1**, for every shortlisted stock together |
+| Bull Case Agent (Optimist) | `agents/bull_case_agent.py` | Swing | ✅ Yes | **1**, batched, runs once per run (not per tier), genuinely in PARALLEL with Bear |
+| Bear Case Agent (Skeptic's Voice) | `agents/bear_case_agent.py` | Swing | ✅ Yes | **1**, batched, runs once per run (not per tier), genuinely in PARALLEL with Bull |
 | Decision Agent (Manager) | `agents/decision_agent.py` | Swing | ✅ Yes | **1 per risk-appetite tier** you selected, each covering every stock together |
+| Orchestrator (Controller) | `agents/orchestrator_agent.py` | Swing | ✅ Yes, but **only when a retry is actually needed** | 0 or 1 extra call per tier — a real LangGraph router, not a fixed step (see Step 7B) |
 | Intraday Agent (Day Trader) | `agents/intraday_agent.py` | Intraday | ❌ No | 0 |
 | Data Sentinel | `agents/intraday_quality_agent.py` | Intraday | ✅ Yes | **0 or 1**, only if a stock shows an unusual, unexplained gap |
 | Narrator | `agents/intraday_narrator_agent.py` | Intraday | ✅ Yes | **1**, for the top picks together (not the whole universe) |
 | Scorekeeper *(optional)* | `agents/intraday_backtest_agent.py` | Intraday (end-of-day) | ✅ Yes | **1**, only if you run `intraday_backtest.py` |
 | Profile structuring | `profile/profile_loader.py` | Shared | ✅ Yes (only for a non-JSON profile file) | 0 or 1, once, not per stock |
 
-So a typical **swing run with one risk profile** makes **2 AI calls total**.
-A typical **intraday scan on a normal day** makes **1 AI call** (just the
-Narrator — the Data Sentinel usually has nothing to review). Compare that
-to the very first version of this app, which called Gemini **~23 times**
-per swing run alone — once per specialist agent, per stock.
+So a typical **swing run with one risk profile** makes **4 AI calls
+total**: News/Event Reader (1) + Bull Case Agent and Bear Case Agent,
+run once and genuinely in parallel, shared across every risk tier (2) +
+Decision Agent (1). Selecting a second risk-appetite tier (e.g.
+Conservative *and* Aggressive) adds one more Decision Agent call, not a
+second Bull/Bear pair — they don't repeat per tier. The Orchestrator
+adds 0 or 1 more call per tier, only on the rare run where its own
+quality check on the Decision Agent's output finds something worth a
+bounded retry (see Step 7B below) — it doesn't fire on a clean run. A
+typical **intraday scan on a normal day** makes **1 AI call** (just the
+Narrator — the Data Sentinel usually has nothing to review). Compare
+that to the very first version of this app, which called the AI model
+**~23 times** per swing run alone — once per specialist agent, per
+stock — and an even earlier post-restructure version that made 2 calls
+per run, before the Bull/Bear debate and the Orchestrator's retry loop
+existed at all.
 
 **Why can most "analysts" run without any AI at all?** Because their job
 has an *exact mathematical answer*. "Is the stock above its 50-day average
@@ -172,7 +206,7 @@ zero-AI and real-data-only, but they're plain output/reporting utilities,
 not part of the `agents/` scoring framework — they don't inherit from
 `BaseAgent` and don't have a `system_instruction`. They're listed
 throughout this document anyway since "which files touch real vs. AI-
-derived data" matters just as much as "which agents call Gemini."
+derived data" matters just as much as "which agents call Bodhi's LLM Gateway."
 
 ---
 
@@ -223,6 +257,24 @@ Say TCS scores high because it fell 2% while the Nifty only fell 0.6% (a
 real relative underperformance) on 1.8x normal volume. It makes the
 watchlist.
 
+### Step 3B — Two independent, non-AI tools double-check TCS is real (`integrations/tradingview_quote.py`, `integrations/mcp_pipeline_client.py`)
+Before any AI money gets spent on TCS, two SEPARATE, optional real tool
+calls (neither is an AI call — both are plain lookups) each ask, a
+different way, "is `TCS` actually a real, currently-tradeable NSE
+symbol?": TradingView's own symbol-search REST endpoint (`TRADINGVIEW_SYMBOL_SEARCH_ENABLED`,
+&lt;1s typical), and a real local MCP server this project owns
+(`MCP_VERIFICATION_ENABLED`, checked against this project's own NIFTY50
+universe list — see Part 3F for what MCP means and why there's a whole
+separate server for this). Both are best-effort and off by default: if
+either is disabled, unreachable, or TradingView Desktop isn't open, that
+check is simply skipped — TCS proceeds with one fewer data-quality
+signal, never a crash. For a real symbol like TCS both normally confirm
+it fine and nothing is flagged; if BOTH somehow failed to confirm it
+(e.g. a typo'd or delisted symbol slipped through), that fact is
+recorded as a real, structured "data quality" flag carried all the way
+to Step 7 — and see Step 7C for what happens if the Manager still
+recommends it confidently anyway.
+
 ### Step 4 — Three pure-math specialists score TCS
 
 **The Analyst** (`agents/fundamental_agent.py`) — starts at a baseline
@@ -249,18 +301,57 @@ stock. Before the AI even sees anything, the code clusters near-duplicate
 headlines — if 4 different publishers all wrote about the same story, that
 becomes ONE entry noting "4 sources," not 4 separate texts.
 
-Gemini is then asked, for TCS and every other shortlisted stock at once:
+The model is then asked, via Bodhi's LLM Gateway, for TCS and every other shortlisted stock at once:
 "what actually happened, how material is it, and what's the sentiment?" It
 might reply: *sentiment: negative, event_type: earnings, materiality: high,
 summary: "TCS shares fell after missing Q1 revenue estimates and citing
 cautious client spending."*
 
-### Step 6 — Memory reports what changed (`memory/memory_layer.py`)
-Zero AI. Before the final decision, the app checks: did we analyse TCS
-before? If so, it pulls up the last real recorded price and scores and
-computes a genuine comparison: *"Previous call (2 days ago): hold; price
-₹3,450 → ₹3,390 (-1.7% since); technical 5 → 4; risk 2 → 2."* This is a
-real diff, not a summary written by AI.
+### Step 6 — Memory reports what changed — AND resurfaces any open GOAL (`memory/memory_layer.py`)
+Zero AI, two distinct things, not one. First, the short-term/consolidated
+comparison this doc already described: did we analyse TCS before? If so,
+it pulls up the last real recorded price and scores and computes a
+genuine comparison: *"Previous call (2 days ago): hold; price ₹3,450 →
+₹3,390 (-1.7% since); technical 5 → 4; risk 2 → 2."* This is a real diff,
+not a summary written by AI.
+
+Second — newer, and a genuinely different mechanism — **persisted GOAL
+tracking** (`memory_layer.py::goal_status()`), which looks further back
+than that short-term comparison for something specific: did a PAST call
+on TCS ever give it a real target price and an invalidation condition
+("what would make me wrong")? If so, this computes, in plain code, the
+real price move since then against that stored target — e.g. *"On
+2026-08-28 TCS was given a target price of ₹3,600. Today's real price
+(₹3,390) is 6.2% away from it. Its stated invalidation condition was:
+'a break below the 200-day moving average' — judge from today's real
+data whether that has now happened."* The FACT (has the price crossed
+the target) is computed by code; whether the qualitative condition
+("broke below the moving average," "guidance was cut") has actually
+happened is left to the Manager to judge in Step 7 below, using today's
+real data — same plain-code/judgment split as everywhere else in this
+project. This is genuinely different from the short-term delta above: it
+persists ACROSS separate days of real market movement, not just "what
+changed since I last looked."
+
+### Step 6B — Two independent AI analysts argue opposite sides — **AI calls, run in parallel** (`agents/bull_case_agent.py`, `agents/bear_case_agent.py`)
+Before the Manager ever sees TCS, two OTHER AI calls already ran — once
+for the whole run, not once per risk tier, and genuinely at the same
+time (a real LangGraph fan-out, timed in `tests/test_research_graph.py`
+to prove it's actually parallel, not just described that way). The Bull
+Case Agent is handed the same real data from Steps 0–6 and asked to
+build the STRONGEST HONEST case *for* TCS; the Bear Case Agent gets the
+identical data and is asked to build the strongest honest case *against*
+it. Neither one ever sees what the other concluded — that's deliberate
+ISOLATION (see Part 6's "Isolate" discussion), guarding against one
+agent's reasoning anchoring the other's if either saw the other's
+argument first. For TCS, the Bull Case Agent might come back with
+*"bull_strength 65/100: valuation has become attractive after the
+pullback, and the underlying business fundamentals haven't actually
+deteriorated (target ₹3,550)"*, while the Bear Case Agent might say
+*"bear_severity 55/100: cautious guidance signals a real, not
+one-quarter, slowdown in client spending (key risk: further guidance
+cuts next quarter)."* Both are handed to the Manager in Step 7 — neither
+one is "the answer" by itself.
 
 ### Step 7 — The Manager makes the final call (`agents/decision_agent.py`) — **AI call, once per risk tier**
 If your profile has one risk appetite selected, this happens once. If you
@@ -269,13 +360,68 @@ selected more than one (e.g. Conservative *and* Aggressive), it runs
 — a Conservative-profile run may skip TCS entirely if it's too volatile
 for that tier, while an Aggressive-profile run may include it.
 
-Gemini receives, **for every shortlisted stock at once**: the real scores
+Bodhi's LLM Gateway receives, **for every shortlisted stock at once**: the real scores
 and labels from Steps 4–6, the real Nifty context from Step 0, your
-investor profile, and the real sector mix of today's watchlist. It's asked
-to produce, per stock: an opportunity score (0–100), a confidence score
-kept *deliberately separate* from opportunity, a bull case, a bear case, a
-stance (accumulate/hold/avoid), a reference target price with reasoning,
-portfolio fit, and an invalidation condition.
+investor profile, the real sector mix of today's watchlist, the Bull and
+Bear Case Agents' two independent arguments from Step 6B, any LIVE
+TradingView quote and open persisted goal from Steps 3B/6, and real,
+retrieved sector-risk notes pulled from this project's own knowledge base
+(actual filtered search — see Part 6 — not static boilerplate). Its job
+is no longer to invent both sides of the argument alone: it must
+**adjudicate** between the Bull and Bear cases — say explicitly where it
+agrees, disagrees, or thinks one side overstates its case — and that
+adjudication, not either agent alone, is what drives the final call. It's
+asked to produce, per stock: an opportunity score (0–100), a confidence
+score kept *deliberately separate* from opportunity, an adjudicated bull
+case, an adjudicated bear case, a stance (accumulate/hold/avoid), a
+reference target price with reasoning, portfolio fit, and an
+invalidation condition.
+
+**Every piece of text above has an explicit size cap before it's
+assembled into this prompt** — not just the retrieved notes, but the
+Bull/Bear cases, the news summary, the Scout's own note, the persisted
+goal, your profile's free-text constraints, and any Orchestrator retry
+feedback (Step 7B) — each capped at 500 characters with a visible
+"…[trimmed for context budget]" marker if it's actually cut. The reason
+is a real, already-existing constraint, not a made-up limit: this one
+call is batched across the WHOLE watchlist (up to 10 stocks), so any one
+of these fields left uncapped would multiply across every stock in the
+same prompt. See Part 3E for the exact number this measures out to and
+why compaction (trimming), not one AI call per stock, was the right fix
+for THIS constraint specifically.
+
+### Step 7B — The Orchestrator checks the Manager's own work (`agents/orchestrator_agent.py`) — **0 or 1 extra AI call**
+The Manager's output isn't just trusted as final. A real, plain-code
+check runs first — is a required field missing, is a score out of range,
+is the call internally inconsistent (e.g. "avoid" paired with a high
+opportunity score, or high confidence despite a flagged data-quality
+issue)? If everything passes, this step costs nothing extra. If it finds
+a real, fixable issue, the Orchestrator — an actual AI call, not a fixed
+retry — decides at runtime whether it's worth sending back: if so, the
+Manager gets a SPECIFIC instruction on what to fix (never "try again,"
+always "here's exactly what's wrong") and re-runs once, bounded — this
+can never loop more than one extra time per tier, however the AI
+responds. This is what makes the pipeline a genuine multi-agent
+controller rather than a fixed script calling agents in a hardcoded
+order.
+
+### Step 7C — A deterministic guardrail catches a confidently WRONG call (`safety/verification_guardrail.py`) — zero AI
+This runs after EVERY tier's Manager+Orchestrator loop finishes, across
+the whole shortlist. It's not a retry, and it can't be argued with: if
+TCS was flagged by BOTH independent tools in Step 3B (TradingView's
+symbol search AND the local MCP check) as unable to confirm it's a real,
+tradeable equity, this forcibly overrides whatever the Manager said —
+`action` becomes `"avoid"`, `confidence` is capped low, and the
+conviction badge is recomputed to match — regardless of how confidently
+the AI argued for it. The trigger is deliberately narrow (a single failed
+tool is already shown to the Manager as context in Step 7 for it to
+weigh itself; only BOTH together bypasses its judgment), so for a real
+symbol like TCS this virtually never fires — it exists for the rare case
+where the underlying symbol itself, not the reasoning about it, is the
+actual problem, which a retry can't fix since re-reasoning over the same
+(wrong) symbol changes nothing. Every override is logged to
+`output/reliability_log.jsonl` with what the Manager originally said, for
+a real audit trail.
 
 **Three things the AI is *not* asked to do**, all computed afterward in
 plain Python:
@@ -294,32 +440,54 @@ plain Python:
   the remaining uncapped picks. This is a real, deterministic allocation
   algorithm — never an AI guess.
 
-### Step 8 — Verify, save and send
-Today's real scores are stored in Memory for tomorrow's delta comparison,
-and the finished shortlist(s) saved to `output/analysis_DATE.json`. Before
-anything goes out, three more things happen, in this order:
+### Step 8 — Verify, guard, save — but NOT send yet
+Today's real scores (plus TCS's target price/invalidation, if it made
+the cut — feeding Step 6's goal tracking on some future run) are stored
+in Memory, the reliability guardrail from Step 7C runs across the whole
+shortlist, and:
 - **`integrations/bodhi_risk_insights.py`** (only if `BODHI_ENABLED=true`)
   sends today's real shortlist to your Bodhi workflow and waits for its
-  answer — see Part 3D. If it finds a per-symbol verdict, that verdict
-  gets shown inline in the Telegram alert and any `avoid`/high-risk symbol
-  is excluded from the TradingView push below. If Bodhi is off,
-  unreachable, or gives no parseable verdict, nothing changes from before
-  this integration existed.
-- **Telegram** gets the shortlist (split into multiple messages if the
-  combined text is over Telegram's 4096-character limit), plus, if Bodhi
-  ran, a second message with its full narrative report.
-- **`alerts/tradingview_watchlist.py`** (only if you've set
-  `TRADINGVIEW_WATCHLIST_ENABLED=true`) pushes the Bodhi-approved subset
-  of shortlisted symbols to your real TradingView watchlist. This is a
-  local-only connection to your own already-running Desktop app — if it
-  isn't open, this step just logs a skip message and everything else
-  still completes.
+  answer — see Part 3D. If it finds a per-symbol verdict, any
+  `avoid`/high-risk symbol is excluded from the TradingView candidate
+  list built below. If Bodhi is off, unreachable, or gives no parseable
+  verdict, nothing changes from before this integration existed.
+- **`alerts/excel_report.py`** (always on, zero AI) writes today's deduped
+  shortlist and the full top-10 watchlist into a new dated sheet in
+  `output/portfolio_tracker.xlsx` — creating the workbook on the first
+  run, replacing that day's sheet on a same-day re-run, leaving every
+  other date's sheet untouched. This happens regardless of what comes
+  next — it's local record-keeping, not "sending out" anything.
 
-Finally, **`alerts/excel_report.py`** (always on, zero AI) writes today's
-deduped shortlist and the full top-10 watchlist into a new dated sheet in
-`output/portfolio_tracker.xlsx` — creating the workbook on the first run,
-replacing that day's sheet on a same-day re-run, leaving every other
-date's sheet untouched.
+**Nothing is sent to Telegram or pushed to TradingView here.** This
+project hands out real financial recommendations, so the finished
+shortlist is saved as a PENDING run (`alerts/approval_gate.py`) instead —
+a real pause, not a formality — and `run.py`'s own job ends there.
+
+### Step 9 — A human approves, THEN it's actually sent (`approve_run.py`, `dashboard.py`, or `service/approval_service.py`)
+Publishing is a separate, deliberate step against THIS specific pending
+run. Three interfaces exist onto the exact same underlying logic — none
+of them re-implements it, they're three doors onto one real function
+(`approve_run.py::_publish()`):
+- **The CLI**: `uv run python approve_run.py --latest` — shows you what
+  it would send, asks a real y/n, then publishes on "y".
+- **The dashboard**'s "② Review & Approve" section — the same summary, an
+  "✅ Approve & publish" button.
+- **The approval microservice** (`service/approval_service.py`, see Part
+  3G) — the identical action over plain HTTP (`POST
+  /pending/{run_id}/approve`), for automation or a system other than a
+  browser/terminal.
+
+Whichever door you use, approving does the SAME two things together:
+Telegram gets the shortlist (split into multiple messages if it's over
+Telegram's 4096-character limit), plus, if Bodhi ran, a second message
+with its full narrative report; and `alerts/tradingview_watchlist.py`
+(only if `TRADINGVIEW_WATCHLIST_ENABLED=true`) pushes the Bodhi-approved
+subset of shortlisted symbols to your real TradingView watchlist — a
+local-only connection to your own already-running Desktop app; if it
+isn't open, this just logs a skip message. A run can only ever be
+approved (or rejected) once — the file physically moves out of the
+pending folder as part of that action, so nothing can be double-published
+by accident, from any of the three doors.
 
 ---
 
@@ -345,10 +513,10 @@ Separately, the app checks: did RELIANCE gap unusually far from
 yesterday's close (≥8%), with none of the mechanical red flags above? If
 not, this step is skipped entirely for RELIANCE — no AI call. If it did
 gap that much, **one batched AI call** (covering every stock with an
-unusual gap today, not just RELIANCE) asks Gemini to weigh in: is this
-gap size and shape more consistent with a real corporate action, or does
-it look like a bad print? Gemini is explicitly told it has no
-corporate-actions calendar and must say so honestly rather than assert
+unusual gap today, not just RELIANCE) asks the model, via Bodhi's LLM
+Gateway, to weigh in: is this gap size and shape more consistent with a
+real corporate action, or does it look like a bad print? The model is
+explicitly told it has no corporate-actions calendar and must say so honestly rather than assert
 certainty — e.g. *"Gap of +7.2% is within plausible trading limits; cannot
 confirm news or corporate actions due to lack of external feeds."*
 
@@ -384,7 +552,7 @@ only the top `TOP_N` go on to the next step.
 
 ### Step 6 — Narrator — **1 AI call, top picks only**
 For just the handful of top picks (not the whole universe), one batched
-call asks Gemini to do two things using ONLY the structured signals and
+call asks the model, via Bodhi's LLM Gateway, to do two things using ONLY the structured signals and
 the real bar-by-bar price sequence it's given — never inventing price
 levels or news:
 1. **Narrative** — 2–3 plain-English sentences on *why* it scored the way
@@ -408,8 +576,8 @@ that day's sheet), and saved to `output/intraday_scan_DATE_TIME.json`.
 
 ### Optional Step 8 — End of day, the Scorekeeper (`intraday_backtest.py`) — **1 AI call**
 Run separately after market close. Refetches real end-of-day price action
-for today's HIGH-conviction picks and asks Gemini for a short, factual
-outcome log — target hit, stop hit, or neither — for a running record of
+for today's HIGH-conviction picks and asks the model, via Bodhi's LLM
+Gateway, for a short, factual outcome log — target hit, stop hit, or neither — for a running record of
 which signal combinations actually work. No advice, no "next time"
 language, just facts.
 
@@ -575,6 +743,147 @@ on. Both are flagged in the module's own docstring.
 
 ---
 
+## Part 3E — Governing the Bodhi Gateway itself (`config.py`)
+
+Every single AI call in this app — every one of the 10 agents named
+above — funnels through exactly one function, `config.call_llm()`. Two
+real, opt-in governance features live there, both about controlling that
+one choke point rather than any individual agent.
+
+**Deliberate per-agent model selection (`BODHI_LLM_MODEL_OVERRIDES`).**
+By default every agent uses the same configured model
+(`BODHI_LLM_MODEL`). This setting lets you route SPECIFIC agents to a
+different one — the documented example is
+`"Orchestrator=gemini-2.5-flash"`: the Orchestrator's job (Step 7B) is a
+classification-shaped decision (temperature 0.1, one short JSON field:
+retry or finish) that doesn't need the same model as the Manager's real
+multi-signal synthesis (Step 7). It's a deliberate choice with a stated
+reason, not an accidental downgrade — and it's left commented/opt-in
+rather than shipped active with a guessed model id, because a wrong id
+here would hard-fail that agent's very first real call, and the actual
+model catalog is account-specific (this project's own token got a real
+`403` — "explicit deny in an identity-based policy" — querying Bodhi's
+own `GET /v1/models`, so there was no safe way to "confirm" one for
+every account). The mechanism itself is fully proven working regardless:
+`tests/test_config_gateway.py::test_per_agent_model_override_is_used_in_the_real_request`
+asserts the overridden model id lands in the real outgoing request body.
+
+**A real, ENFORCED token budget (`BODHI_LLM_TOKEN_BUDGET_LIMIT`).**
+Distinct from `BODHI_LLM_TOKEN_BUDGET_WARNING`, which only logs a visible
+note AFTER a call already succeeded and reported an unusually high real
+token count. The LIMIT is a hard ceiling checked BEFORE anything is ever
+sent: it estimates a prompt's size (characters ÷ 4 — a documented rough
+approximation, not a real tokenizer, since Bodhi can route to different
+backends) and simply refuses the call — `BodhiGatewayBudgetExceededError`,
+nothing sent to the gateway — if that estimate would exceed the limit.
+The shipped default (`.env.example`: `WARNING=12000`, `LIMIT=20000`) is a
+MEASURED number, not a guess: the Manager's own batched, up-to-10-stock
+prompt (Step 7 above) is the single largest real prompt in this app, and
+since every variable-length field feeding it is already capped (Step 7's
+"every piece of text... has an explicit size cap" paragraph), its true
+worst case is computable rather than open-ended. Building that exact
+worst case — 10 stocks, every optional field at its trimmed cap —
+through the real prompt-assembly code measures **~59,700 real
+characters, ~14,920 estimated tokens**; `LIMIT` sits about 34% above
+that measured ceiling, so an ordinary maximal-but-legitimate run never
+trips it, while a genuinely runaway prompt (a bug duplicating data into
+it, say) still gets refused before a rupee is spent. Tested in
+`tests/test_config_gateway.py` by asserting `requests.post` is never
+even called when the limit would be exceeded.
+
+---
+
+## Part 3F — A second, real MCP server this project owns (`integrations/mcp_server.py`, `integrations/mcp_pipeline_client.py`)
+
+Part 3D's Bodhi workflow already uses MCP once — `bodhi-deep-research`,
+a tool Bodhi's own platform exposes over HTTP, that this project's
+workflow JSON calls. This is a SEPARATE, second MCP surface, one this
+project builds and owns end to end, over a genuinely different
+transport.
+
+**What MCP actually is, briefly:** a standard protocol for an AI
+system to call external tools/data in a structured way — like a plug
+shape that any compliant "server" (the tool side) and "client" (the
+AI-system side) both fit, instead of a one-off integration per tool.
+
+**Why a second one, not just reusing Bodhi's:** to demonstrate the OTHER
+half of what MCP defines. Bodhi's `bodhi-deep-research` is reached over
+HTTP and exposes one primitive (a Tool). This project's own server
+(`integrations/mcp_server.py`) runs over **stdio** — a local process
+pipe, not a network call — and exposes all THREE server primitives the
+MCP spec defines: a **Tool** (`verify_nse_symbol` — the local check used
+in Step 3B above), a **Resource** (`sector-notes://{sector}`, serving
+this project's own real sector-risk text), and a **Prompt**
+(`risk_review_prompt`, a parameterized template). One real, documented,
+researched omission: **Sampling**, an MCP client primitive, is
+deliberately NOT implemented — the current MCP spec (checked directly
+against the official docs before deciding this, not assumed) marks it
+**deprecated**, recommending direct provider-API integration instead;
+building a deprecated feature just to check a box would be worse than
+explaining why it was skipped.
+
+**A real bug this surfaced, worth knowing if you extend this server:**
+stdio transport means **stdout IS the protocol channel** — any stray
+`print()` from imported code corrupts the JSON-RPC stream. This
+project's own `data/nse_universe.py` prints real status lines for normal
+CLI use, which broke the MCP server the first time it called
+`resolve_universe()` — fixed with a context manager
+(`_stdout_reserved_for_mcp_protocol()`) that redirects stdout→stderr for
+just the duration of that one call, without touching `nse_universe.py`'s
+normal (correct-for-every-other-caller) behaviour.
+
+9 real tests (`tests/test_mcp_pipeline_client.py`) spawn the actual
+server as a subprocess and speak the actual protocol over actual pipes —
+no mocking of the protocol itself, deterministic and CI-safe since the
+server needs nothing beyond Python and a cached NSE fetch (no
+TradingView Desktop, no Bodhi credentials).
+
+---
+
+## Part 3G — The approval/publish path as a real, separate microservice (`service/approval_service.py`)
+
+Step 9 named three doors onto the same publish logic; this is the third
+one, in more detail. `service/approval_service.py` is a genuinely
+SEPARATE process — its own `Dockerfile`, its own port, deployable on its
+own schedule/host, entirely independent of whether `run.py` is currently
+executing or a browser has the dashboard open.
+
+**Why split it out specifically:** `run.py` is a batch job — it runs
+once a day, takes minutes, and has no reason to sit listening on a
+network port. The approve/reject decision is the opposite shape: a human
+(or another system) needs to be able to act on a pending run **at any
+time**. This project already had that seam conceptually (`run.py` never
+publishes; approval was already a separate step) — this service just
+gives it a THIRD interface, reachable over plain HTTP, instead of only a
+CLI or a browser tab.
+
+**Not a rewrite of the logic** — every endpoint calls straight into the
+same `alerts/approval_gate.py` state machine and `approve_run.py::_publish()`
+function the CLI and dashboard already use, so there's exactly one real
+"what does approving a run do," not three to keep in sync:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /health` | Real health check, for a load balancer or container orchestrator |
+| `GET /pending` | List pending runs with a per-tier pick count |
+| `GET /pending/{run_id}` | The full record for one pending run |
+| `POST /pending/{run_id}/approve` | Publishes to every configured channel, moves the run to `output/approved/` |
+| `POST /pending/{run_id}/reject` | Moves the run to `output/rejected/` with a reason |
+
+`run_id` is checked against the exact real pending-filename shape
+BEFORE it's ever used to build a filesystem path — a malformed or
+path-traversal attempt is refused with a `400`/`404`, never silently
+joined into a path. Run it standalone with `uv run uvicorn
+service.approval_service:app --host 0.0.0.0 --port 8000`; a real
+`uvicorn` process (not just an in-process test client) was started and
+hit with real HTTP requests against this project's actual pending-run
+data during development. 8 tests (`tests/test_approval_service.py`)
+exercise every endpoint over genuine HTTP, including that approving
+over HTTP triggers the identical coordinated Telegram+TradingView
+publish the CLI path gets.
+
+---
+
 ## Part 4 — Every real formula used, in plain English
 
 ### Swing pipeline — `data/signals.py` (zero AI, zero network calls)
@@ -624,19 +933,21 @@ on. Both are flagged in the module's own docstring.
 | Nifty 50 index | `yfinance`, ticker `^NSEI` | `data/market_context.py` | No |
 | News headlines | Google News RSS search feed (`news.google.com/rss/search?q=...`) | `data/market_data.py` | No |
 | Nifty 50/500 constituent lists | NSE's public CSV files (`archives.nseindia.com/.../ind_nifty50list.csv`) | `data/nse_universe.py` | No |
-| AI reasoning | Google Gemini, via the official `google-genai` Python SDK | `agents/base_agent.py` (shared by every AI-calling agent) | **Yes** |
+| AI reasoning | Bodhi's LLM Gateway (an OpenAI-compatible `chat/completions` endpoint), via a plain `requests` REST call — no provider SDK | `agents/base_agent.py` (shared by every AI-calling agent), through `config.call_llm()` | **Yes** |
 | Sending the alert | Telegram Bot API (`api.telegram.org/bot<token>/sendMessage`) | `alerts/telegram_alert.py` | Yes, optional |
 | Storing memory | ChromaDB, a small local vector database (no internet involved) | `memory/memory_layer.py` | No |
 | Tracing AI calls | LangSmith, via the official `langsmith` Python SDK's `@traceable` decorator | `observability.py`, applied across `agents/*.py`, `run.py`, `intraday_run.py`, `intraday_backtest.py` | Yes, optional |
 | Pushing to TradingView | [tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp) CLI, driving your logged-in TradingView Desktop app over Chrome DevTools Protocol on `localhost` — not a public API, no credentials | `alerts/tradingview_watchlist.py` | No (local only) |
 | Writing the workbook | `openpyxl`, a local Python library — no network call at all | `alerts/excel_report.py`, `tracker/price_tracker.py` | No |
 | Bodhi Risk Insight | Bodhi's REST API (`POST/GET .../tasks/{task_id}/runs`), a separate external AI platform | `integrations/bodhi_client.py`, `integrations/bodhi_risk_insights.py` | Yes, optional (PAT token) |
+| Local MCP symbol verification | A real MCP server THIS project owns, over stdio transport (no network at all) — Part 3F | `integrations/mcp_server.py`, `integrations/mcp_pipeline_client.py` | No |
+| Approval/publish over HTTP | This project's own `service/approval_service.py`, a real FastAPI microservice — Part 3G | `service/approval_service.py` | No (local/self-hosted) |
 
 ---
 
 ## Part 6 — How the tracing actually works (`observability.py`)
 
-Every agent's `run()` method, and the actual Gemini call inside
+Every agent's `run()` method, and the actual Bodhi LLM Gateway call inside
 `base_agent.py`, is wrapped in a decorator called `@traceable`. Think of a
 decorator as a wrapper that runs some extra code before and after a
 function, without changing what the function itself does.
@@ -647,9 +958,9 @@ function, without changing what the function itself does.
   there at all.
 - If it **is** set, every call becomes one node in a tree sent to
   LangSmith: the pipeline's `main()` function is the root, each agent's
-  `run()` is a child node, and the actual Gemini call is a grandchild
+  `run()` is a child node, and the actual Bodhi LLM Gateway call is a grandchild
   labeled with which agent made it, plus the real input/output tokens
-  Gemini reported for that call.
+  the gateway reported for that call.
 - **A tracing failure can never break the app.** If the LangSmith upload
   fails (bad key, no internet), the SDK logs a warning to the console and
   the actual function still runs and returns its real result — tracing is
@@ -702,6 +1013,28 @@ cost — are all covered without them.
 - **Write-only field**: a value an AI is allowed to add (like a plain-
   English explanation) but never allowed to use to change a decision
   that's already been made by deterministic code.
+- **Goal tracking (persisted)**: remembering a specific target/condition
+  an agent set on a PAST call, so a LATER call (a different day, a
+  different run) can check real, current data against it — distinct from
+  a short-term "what changed since last time" comparison. See Step 6.
+- **Guardrail**: a check that stops or overrides bad output. This project
+  has two, for two different failure shapes: `safety/text_safety.py`
+  scans/redacts UNTRUSTED INPUT (an uploaded profile document) before it
+  reaches a prompt; `safety/verification_guardrail.py` overrides
+  CONFIDENT-BUT-WRONG OUTPUT after the AI has already answered — see
+  Step 7C.
+- **MCP (Model Context Protocol)**: a standard way for an AI system to
+  call external tools/data through a shared shape, instead of a one-off
+  integration per tool. This project uses it twice, two different ways —
+  see Part 3D (Bodhi's own, over HTTP) and Part 3F (this project's own,
+  over stdio).
+- **Microservice**: a piece of a system deliberately split out to run as
+  its own independent process/deployment, reachable over a standard
+  interface (here, plain HTTP) — see Part 3G.
+- **Token budget**: a limit on how much text (estimated in "tokens," a
+  rough unit AI models are billed and limited by) a single AI request is
+  allowed to contain, checked and enforced BEFORE the request is sent —
+  see Part 3E.
 
 ---
 

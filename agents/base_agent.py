@@ -36,6 +36,7 @@ class BaseAgent:
             system_instruction=self.system_instruction,
             temperature=temperature,
             json_mode=True,
+            agent=self.name,
         )
         self._trace_call_details(usage)
         # Strip accidental ```json fences if the model adds them.

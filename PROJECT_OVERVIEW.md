@@ -10,7 +10,28 @@
 
 **The one thing worth remembering:** this is not a chatbot and not an auto-trader. It's a workflow — *look at real data → reason about it → hand you a short, explained shortlist* — and a human still makes every decision.
 
-**Who benefits, and how we know it's working.** The direct beneficiary is the PS engineering team itself: this codebase is the worked example new engineers point to for multi-agent design, Bodhi Gateway routing, MCP tool use, and Bodhi Workflow Builder authoring — cutting the ramp-up time for the next agentic project. Because it also produces real, checkable output, we hold ourselves to a concrete, honestly-reported success measure rather than a subjective one: `tracker/quality_report.py` reads back every stock this tool has ever picked and computes real win-rate and average price change since each pick was made, with zero AI involved in the measurement itself. The most recent run: **11 tracked picks, 0% win rate, -2.38% average change since listing.** We report that number as-is — a genuine, non-cherry-picked measurement is the whole point of building the tracker, and it's exactly the kind of evidence trail an internal reference pattern should have baked in from day one.
+**Who benefits, and how we know it's working.** The direct beneficiary is
+named specifically, not just "PS engineers": the **Publicis Sapient
+Engineering — Bodhi Agentic Systems** delivery pattern — this codebase
+is the worked example the next team on that pattern points to for
+multi-agent design, Bodhi Gateway routing, MCP tool use, and Bodhi
+Workflow Builder authoring — cutting the ramp-up time for the next
+agentic project. Because it also produces real, checkable output, we hold ourselves to a concrete, honestly-reported success measure rather than a subjective one: `tracker/quality_report.py` reads back every stock this tool has ever picked and computes real win-rate and average price change since each pick was made, with zero AI involved in the measurement itself. The most recent run: **11 tracked picks, 0% win rate, -2.38% average change since listing.** We report that number as-is — a genuine, non-cherry-picked measurement is the whole point of building the tracker, and it's exactly the kind of evidence trail an internal reference pattern should have baked in from day one.
+
+**Quantified before/after — real numbers from this project's own history, not modeled estimates:**
+
+| Measure | Before | After | Source |
+|---|---|---|---|
+| AI calls per run | ~23 (once per specialist, per stock) | ~4 (batched across the whole watchlist, regardless of universe size) | this project's own git history — see README §5 |
+| Bodhi `set-variable`/`if-else` node fixes needed | 4 real rounds of trial-and-error against the live platform | 0 — the working expressions are already documented, copy-pasteable | `integrations/bodhi_workflow/README.md`'s fix history |
+| Files to copy for governed model access + human approval gate | build from scratch | 3 files (`config.py`, `schemas.py`, `alerts/approval_gate.py` + `approve_run.py`) | see "Reusing this as a starter template" in README.md |
+| Model-governance test coverage to write | build from scratch | 170 passing tests already exist — including full multi-agent, both-Bodhi-branch, real-HTTP-microservice, and real-MCP-subprocess scenario tests, not just isolated units — isolated, mockable, wired into CI | `tests/`, `.github/workflows/tests.yml`, `uv run pytest tests/ -v` |
+| Governed-gateway cost control to build | build from scratch | Per-agent model routing + an ENFORCED pre-send token budget, both already measured against this project's own real worst-case prompt, not guessed | `config.py`, §"Governing the Bodhi Gateway" below |
+| Typed validation at agent/gateway/workflow boundaries | build from scratch, or trust raw dicts | `schemas.py` — 5 pydantic models, each gating a real handoff (gateway response, bull/bear case, decision shortlist, Bodhi verdict, memory record) | `schemas.py`, `tests/test_schemas.py` |
+
+We don't claim an hours-saved figure, since that depends on the adopting
+team's own starting point — these are the concrete artifacts and counts
+that are actually true regardless of who's reusing them.
 
 ---
 
@@ -34,7 +55,7 @@ flowchart TB
         NSE["NSE India<br/>official stock lists"]
     end
 
-    subgraph Team["The Research Team — 11 specialists"]
+    subgraph Team["The Research Team — 13 specialists"]
         Calc["5 Calculators<br/>pure maths, zero AI cost"]
         Think["5 Thinkers<br/>use Bodhi's LLM Gateway"]
     end
@@ -47,13 +68,13 @@ flowchart TB
     Inputs --> Calc --> Think --> Outputs
 ```
 
-**The key design decision, and why it matters commercially:** only **5 of the 11 specialists actually use paid AI** by default (an 11th, the Orchestrator, only steps in on the rare run where it finds something worth fixing). The other 5 do pure arithmetic — the kind of thing a spreadsheet formula does — because their job (is this stock above its average price? has it broken a 20-day high?) has one exact right answer. Asking an AI to do that would be slower, more expensive, and *less* consistent than a formula. We only pay for AI where a formula genuinely can't do the job: **understanding what a news headline means**, and **weighing several conflicting opinions into one final, explained call**.
+**The key design decision, and why it matters commercially:** only **5 of the 13 specialists actually use paid AI** by default (2 more — the Bull Case and Bear Case Agents — run genuinely in parallel and are shared across every risk tier, not repeated; a 13th, the Orchestrator, only steps in on the rare run where it finds something worth fixing). The other 5 do pure arithmetic — the kind of thing a spreadsheet formula does — because their job (is this stock above its average price? has it broken a 20-day high?) has one exact right answer. Asking an AI to do that would be slower, more expensive, and *less* consistent than a formula. We only pay for AI where a formula genuinely can't do the job: **understanding what a news headline means**, and **weighing several conflicting opinions into one final, explained call**.
 
-That decision is why this app makes roughly **2 AI calls per full scan of the market**, whether we're scanning 10 stocks or 500.
+That decision is why this app makes roughly **4 AI calls per full scan of the market**, whether we're scanning 10 stocks or 500.
 
 ---
 
-## 3. Meet the team — 11 agents
+## 3. Meet the team — 13 agents
 
 We have two separate "crews": one that runs once a day (the **Swing crew**, for multi-day/multi-week ideas) and one that only makes sense while the market is open (the **Intraday crew**, for same-day price action).
 
@@ -66,7 +87,9 @@ We have two separate "crews": one that runs once a day (the **Swing crew**, for 
 | 3 | **Technical Agent** ("The Chart Reader") | Scores the price chart itself — trend direction, momentum (RSI), how it's doing vs. the Nifty 50. | ❌ No — pure maths |
 | 4 | **Risk Agent** ("The Skeptic") | Scores downside risk — volatility, how sharply it's crashed before, how easy it'd be to sell a position without moving the price. | ❌ No — pure maths |
 | 5 | **News/Event Reader** | Reads the real, deduplicated news headlines for every shortlisted stock **at once** and works out what happened, how big a deal it is, and whether it's good or bad news. | ✅ Yes — **1 AI call**, covers every stock together |
-| 6 | **Decision Agent** ("The Manager") | Weighs all four scores above + the real news read + your own investor profile (risk appetite, capital, sector preferences) and writes the final shortlist: bull case, bear case, a target price, and how much money to actually put into each pick. Its prompt is also grounded with real, retrieved sector-risk notes — actual semantic search, not static boilerplate. | ✅ Yes — **1 AI call**, covers every stock together |
+| — | **Bull Case Agent** ("The Optimist") | Independently argues the strongest honest upside case for every shortlisted stock from the real data — has zero visibility into what the Bear Case Agent concludes. Runs once per run (not per risk tier), genuinely in **parallel** with the Bear Case Agent. | ✅ Yes — **1 AI call**, batched, runs in parallel |
+| — | **Bear Case Agent** ("The Skeptic's Voice") | The independent counterpart: argues the strongest honest downside case, with zero visibility into the Bull Case Agent's conclusion. Same batching, same tier-independence, same real parallel execution. | ✅ Yes — **1 AI call**, batched, runs in parallel |
+| 6 | **Decision Agent** ("The Manager") | *Adjudicates* between the Bull and Bear Case Agents' independent analyses — it no longer invents both sides of the argument itself — plus all four scores above, the real news read, and your own investor profile, into the final shortlist: a target price, and how much money to actually put into each pick. Its prompt is also grounded with real, retrieved sector-risk notes — actual semantic search, not static boilerplate. | ✅ Yes — **1 AI call**, covers every stock together |
 | — | **Orchestrator** ("The Controller") | Not a fixed step, a real router: runs the Manager, checks its own output for real issues (a missing field, an internally inconsistent call), then *decides at runtime* whether to accept it or send it back with specific feedback for one bounded retry. This is what makes the pipeline a genuine multi-agent system rather than a fixed script calling agents in a hardcoded order. | ✅ Yes, but **only when a retry is actually needed** |
 
 ### The Intraday crew (runs on demand, during market hours, via `intraday_run.py`)
@@ -80,7 +103,7 @@ This is a completely separate, same-day mode: it looks at price action **minute-
 | 9 | **Narrator** | Writes a 2–3 sentence plain-English explanation of *why* each top pick scored the way it did, for the handful of stocks that made the final cut — it explains the score, it can never change it. | ✅ Yes — **1 AI call**, top picks only |
 | 10 | **Scorekeeper** *(optional, end-of-day)* | A separate, optional script you can run after the market closes: compares today's picks to what actually happened (target hit? stop hit? neither?) — a factual report card, not advice. | ✅ Yes — **1 AI call**, only if run |
 
-**Bottom line: 5 of the 11 agents never touch AI at all**, the 5 core ones that do are batched to cover the *whole* watchlist in a single call each (not one call per stock), and the 11th — the Orchestrator — only calls AI on the rare run where its own quality check on the Manager's output actually finds something wrong.
+**Bottom line: 5 of the 13 agents never touch AI at all**, the AI-using ones are all batched to cover the *whole* watchlist in a single call each (not one call per stock), the Bull and Bear Case Agents genuinely run in parallel and only once per run (not once per risk tier), and the Orchestrator only calls AI on the rare run where its own quality check on the Manager's output actually finds something wrong.
 
 ---
 
@@ -184,14 +207,16 @@ This is usually the first question a budget-owner asks, so here's the exact answ
 
 | Scenario | Real AI calls |
 |---|---|
-| **One daily swing scan** (default: one risk profile) | **2** |
-| Swing scan with 2 risk profiles selected (e.g. Conservative *and* Aggressive) | 3 (one more per extra profile) |
+| **One daily swing scan** (default: one risk profile) | **4** — News/Event Reader (1) + Bull Case + Bear Case Agents, run once and in parallel (2) + Decision Agent (1) |
+| Swing scan with 2 risk profiles selected (e.g. Conservative *and* Aggressive) | 5 (one more Decision Agent call per extra profile — Bull/Bear don't repeat) |
 | **One intraday scan**, normal day | **1** (just the Narrator) |
 | Intraday scan on a day with an unusual price gap to double-check | 2 |
 | Optional end-of-day report card | 1, only if you choose to run it |
 | First-time profile upload (PDF/Word/Excel document) | 0 or 1, **one-time only** — after that it's saved and reused for free |
 
 For comparison: an early version of this project called the AI **~23 times** per run, once per specialist per stock. Restructuring to "batch everything, and only call AI where a formula truly can't do the job" cut that by roughly 90%, with no loss of analysis quality.
+
+**Governing that one choke point, not just counting it.** Every one of those calls funnels through a single function (`config.py::call_llm()`), which now has two real cost controls: (1) an OPTIONAL per-agent model override, so a simple routing decision can use a cheaper/faster model than the real multi-signal synthesis the Decision Agent does; (2) an ENFORCED token budget — a real ceiling, measured against this project's own actual worst-case prompt (the Decision Agent's full batched request), not a guessed number, that refuses an oversized call *before* anything is sent or paid for. Both are opt-in and both are tested against the real outgoing request, not just described.
 
 ---
 
@@ -323,6 +348,15 @@ Yes. We added an optional integration with **LangSmith**, an AI-monitoring tool.
 
 This gives us the ability to audit, cost-track, and debug every AI decision after the fact, rather than treating the AI as an unexplainable black box.
 
+Separate from LangSmith and needing **zero setup**, four JSONL logs persist
+real evidence to disk on every run — which AI calls happened, which
+gateway failures happened (now typed: an identity/permissions denial vs.
+a malformed response vs. a network failure, not one generic error), every
+Orchestrator retry-vs-finish decision, and every real tool call an agent
+made mid-reasoning (e.g. a live TradingView quote). All four are readable
+from the dashboard's Activity tab, not just as raw files — see README §
+"🧪 Testing, and what actually happened at runtime".
+
 ---
 
 ## 11. Guardrails — how we keep this trustworthy
@@ -331,10 +365,40 @@ This gives us the ability to audit, cost-track, and debug every AI decision afte
 - **No silent fallbacks.** Early versions had a "demo mode" and a rule-based backup plan for when the AI was unreachable. Both were removed — either the analysis is real, or you're told clearly that it failed.
 - **The AI never invents the money math.** How many shares to buy, and how to split your capital across today's picks, is calculated by plain code from your own stated capital and risk limit — never guessed by the AI.
 - **Nothing is "buy this now" advice.** Every output carries a bull case *and* a bear case, a confidence score separate from the opportunity score, and a plain disclaimer. A human always makes the final call.
+- **A deterministic override for a confidently WRONG call, not just a crash.** Every guardrail above catches an obvious failure (bad data, invented advice). This one catches a subtler case: the AI can be well-reasoned and still be confidently recommending a stock that two INDEPENDENT, non-AI checks (a live TradingView lookup and this project's own local verification tool) both failed to confirm is even a real, tradeable stock. When that specific, narrow condition is true, the system overrides the call to "avoid" itself — no AI involved in the override, and it can't be argued back into a different answer, because it isn't asking the AI anything at that point.
 
 ---
 
-## 12. Quick glossary
+## 12. A second, independently deployable piece
+
+Everything above runs as one project you'd check out and run locally. One
+piece — the human approval/publish step — also exists as a genuinely
+SEPARATE, independently deployable service: its own process, its own
+container image, reachable over a standard web interface (HTTP) from
+anywhere, not just from this project's own dashboard or command line.
+
+**Why this specific piece, and why it matters.** The daily analysis is a
+batch job — it runs once, takes a few minutes, and there's no reason for
+it to sit listening for requests. Approving a finished shortlist is the
+opposite: someone should be able to review and act on it *at any time*,
+from *anywhere*, independent of whether the analysis is currently
+running. Splitting exactly that piece out — and only that piece — is what
+shows this system isn't locked into "runs on one laptop or nowhere":
+the same approve/reject/publish logic that already exists is reachable
+as a standalone, deployable web service, with its own tests proving it
+sends to the same places (Telegram, TradingView) the regular path does.
+
+We also built a second, independent tool-lookup channel this project
+owns end-to-end (not borrowed from Bodhi) — a small local verification
+service using MCP (Model Context Protocol, an emerging standard for how
+AI systems call outside tools consistently). It needs nothing beyond
+this project's own code to run, which is what makes the "confidently
+wrong" guardrail above possible without depending on a third-party app
+being open.
+
+---
+
+## 13. Quick glossary
 
 - **LLM / AI call** — one request sent through Bodhi's LLM Gateway, the only step in this system that costs money and "thinks" rather than calculates.
 - **Batched call** — one AI request that covers *every* stock on the watchlist at once, instead of one request per stock.
@@ -348,6 +412,11 @@ This gives us the ability to audit, cost-track, and debug every AI decision afte
 - **Watchlist** — the short list of stocks that made the cut for deeper (more expensive) analysis, out of the full universe scanned.
 - **Gap** — when a stock opens today at a noticeably different price than where it closed yesterday, usually because of news overnight while markets were shut.
 - **Bull case / bear case** — the reasons to be optimistic about a stock, and the reasons it could go wrong, presented side by side rather than a single one-sided opinion.
+- **Goal tracking** — remembering a specific target the system set for a stock on a past day, so a later run can check today's real price against it, rather than only comparing to the most recent call.
+- **Guardrail** — an automatic check that stops or overrides a bad output, without needing a human to catch it manually.
+- **MCP (Model Context Protocol)** — an emerging standard way for an AI system to call outside tools/data consistently, instead of a custom one-off wire-up per tool.
+- **Microservice** — one piece of a system deliberately split out to run as its own independent, separately deployable process.
+- **Token budget** — a limit on how large a single AI request is allowed to be, checked and enforced before it's ever sent (and before it's ever paid for).
 
 ---
 

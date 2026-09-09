@@ -22,6 +22,7 @@ secrets, not day-to-day knobs, and stay in .env only.
 
 import datetime as dt
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -35,6 +36,7 @@ sys.path.insert(0, str(ROOT))
 from data import market_data  # noqa: E402
 from profile.profile_loader import load_profile  # noqa: E402
 from alerts import approval_gate  # noqa: E402
+import observability  # noqa: E402
 
 OUTPUT_DIR = ROOT / "output"
 ENV_PATH = ROOT / ".env"
@@ -272,6 +274,79 @@ def list_intraday_runs() -> list:
 
 def load_run(path: Path) -> dict:
     return json.loads(path.read_text())
+
+
+# ----------------------------------------------------------------------
+# Real run-progress + error extraction from a subprocess's actual output —
+# not a generic "see log above", an operator gets the real step-by-step
+# progress and the real failure reason surfaced directly.
+# ----------------------------------------------------------------------
+_STEP_RE = re.compile(r"^\s*STEP\s+(\d+)\s+—\s+(.+?)\s*$", re.MULTILINE)
+
+
+def _completed_steps(log_text: str) -> list:
+    """Every "STEP N — Title" banner actually printed, in order — real
+    progress evidence from the run's own output, not a guessed progress bar."""
+    return [(int(n), title) for n, title in _STEP_RE.findall(log_text or "")]
+
+
+def _extract_real_error(log_text: str) -> str:
+    """The single most useful line from a failed run: the last real
+    exception message, if a Python traceback is present, else the last
+    non-empty line of output. Never the whole log dump."""
+    text = log_text or ""
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return "(no output captured)"
+    for line in reversed(lines):
+        stripped = line.strip()
+        if any(stripped.startswith(exc) for exc in (
+            "RuntimeError", "ValueError", "TypeError", "KeyError",
+            "FileNotFoundError", "ConnectionError", "TimeoutError",
+        )) or (": " in stripped and stripped.split(":")[0].endswith("Error")):
+            return stripped
+    return lines[-1]
+
+
+def _stream_subprocess_output(cmd: list, cwd, result: dict):
+    """A real generator for st.write_stream(): yields each real line of
+    `cmd`'s stdout/stderr AS IT ARRIVES — genuine incremental streaming
+    WITH BACK-PRESSURE. Streamlit's write_stream pulls from this
+    generator only as fast as it renders; nothing here buffers the
+    whole log in memory before the first line is shown, unlike the
+    earlier version of this function (a poll-and-full-redraw loop that
+    re-rendered a growing string on every subprocess line). A generator
+    can't also `return` a value the normal way, so `result` (a plain
+    dict the caller owns) is where the real exit code, full log, and
+    parsed STEP banners land once the subprocess actually exits —
+    read it only AFTER the stream is fully consumed."""
+    proc = subprocess.Popen(
+        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+    )
+    log_lines = []
+    for line in proc.stdout:
+        log_lines.append(line)
+        yield line
+    proc.wait()
+    result["returncode"] = proc.returncode
+    result["full_log"] = "".join(log_lines)
+    result["steps"] = _completed_steps(result["full_log"])
+
+
+def _run_with_live_progress(cmd: list, cwd, placeholder, running_caption: str) -> tuple:
+    """Runs `cmd` with REAL Streamlit streaming (st.write_stream) — the
+    process's real stdout/stderr renders incrementally as it's actually
+    produced, with genuine back-pressure, not a spinner that gives no
+    idea which of ~10 real steps is currently running and not a
+    poll-driven full-redraw. Returns (returncode, full_log, steps) — the
+    same shape callers previously got from subprocess.run() +
+    _completed_steps(), so nothing downstream needs to change."""
+    result: dict = {}
+    with placeholder.container():
+        st.caption(f"⏳ {running_caption}")
+        st.write_stream(_stream_subprocess_output(cmd, cwd, result))
+    placeholder.empty()
+    return result["returncode"], result["full_log"], result["steps"]
 
 
 # ----------------------------------------------------------------------
@@ -567,24 +642,38 @@ def render_run_controls():
     )
 
     _step_header(1, "Run full swing analysis")
+    if env.get("TRADINGVIEW_QUOTE_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+        st.sidebar.caption(
+            "🛠 TRADINGVIEW_QUOTE_ENABLED is on — the Decision Agent will call "
+            "a real live TradingView quote per stock while reasoning (~20s "
+            "each, cached per symbol). This run will take noticeably longer."
+        )
     if st.sidebar.button("▶ Run swing analysis now", use_container_width=True, key="btn_swing"):
         # Always save whatever the profile widgets currently show, right
         # before running — so this run can NEVER silently use a stale
         # profile just because "Save profile" wasn't clicked separately.
         _write_profile(_profile_from_widget_state())
-        with st.spinner("Running the full agent pipeline..."):
-            proc = subprocess.run(
-                ["uv", "run", "python", "run.py"],
-                cwd=ROOT, capture_output=True, text=True,
-            )
-        with st.sidebar.expander("Run log", expanded=proc.returncode != 0):
-            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
-        if proc.returncode == 0:
+        progress = st.sidebar.empty()
+        returncode, full_log, steps = _run_with_live_progress(
+            ["uv", "run", "python", "run.py"], ROOT, progress,
+            "running the full agent pipeline — each step appears above as it completes...",
+        )
+        if returncode == 0:
+            with st.sidebar.expander(f"✅ {len(steps)} step(s) completed", expanded=False):
+                for n, title in steps:
+                    st.write(f"✅ Step {n} — {title}")
+                st.code(full_log, language="text")
             st.sidebar.success("Run complete — pending your approval below before anything is sent.")
             st.cache_data.clear()
             st.rerun()
         else:
-            st.sidebar.error("Run failed — see log above.")
+            real_error = _extract_real_error(full_log)
+            st.sidebar.error(f"Run failed at step {len(steps) + 1}: {real_error}")
+            with st.sidebar.expander(f"Run log ({len(steps)} step(s) completed before failure)", expanded=True):
+                for n, title in steps:
+                    st.write(f"✅ Step {n} — {title}")
+                st.write(f"❌ **{real_error}**")
+                st.code(full_log, language="text")
 
     st.sidebar.markdown("<div class='step-connector'></div>", unsafe_allow_html=True)
     _step_header(2, "Review & Approve")
@@ -608,7 +697,16 @@ def render_run_controls():
             tv_symbols = record.get("tv_symbols") or []
             st.write(f"TradingView candidates: {', '.join(tv_symbols) or '(none)'}")
             if record.get("bodhi_ran"):
-                st.write("🧠 Bodhi risk verification ran — full report will be sent to Telegram too.")
+                branch = "🔺 escalated (deeper review ran)" if record.get("bodhi_escalation_branch_fired") \
+                    else "✅ clean (no escalation needed)"
+                st.write(f"🧠 Bodhi risk verification ran — branch outcome: {branch}. "
+                         f"Full report will be sent to Telegram too.")
+                if record.get("bodhi_research_degraded"):
+                    st.warning(
+                        "⚠️ This run's Bodhi report indicates its research tool "
+                        "degraded mid-run — verdicts may be reasoning-only, not "
+                        "freshly researched. Review the full report before approving."
+                    )
 
             col_approve, col_reject = st.columns(2)
             if col_approve.button("✅ Approve & publish", use_container_width=True, key="btn_approve"):
@@ -617,13 +715,14 @@ def render_run_controls():
                         ["uv", "run", "python", "approve_run.py", "--latest", "--auto-approve"],
                         cwd=ROOT, capture_output=True, text=True,
                     )
+                approval_log = (proc.stdout or "") + (proc.stderr or "")
                 with st.sidebar.expander("Approval log", expanded=proc.returncode != 0):
-                    st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
+                    st.code(approval_log, language="text")
                 if proc.returncode == 0:
                     st.sidebar.success("Approved and published.")
                     st.rerun()
                 else:
-                    st.sidebar.error("Approval failed — see log above.")
+                    st.sidebar.error(f"Approval failed: {_extract_real_error(approval_log)}")
             if col_reject.button("🚫 Reject", use_container_width=True, key="btn_reject"):
                 approval_gate.reject(latest, reason="rejected from dashboard")
                 st.sidebar.warning("Rejected — nothing was sent.")
@@ -636,14 +735,14 @@ def render_run_controls():
     _step_header(3, "Bodhi risk verification")
     st.sidebar.caption("Optional (BODHI_ENABLED=true) — an independent second opinion that gates step ④.")
     if st.sidebar.button("🧠 Get Bodhi Risk Insight", use_container_width=True, key="btn_bodhi"):
-        with st.spinner("Sending today's shortlist to Bodhi and waiting for its analysis..."):
-            proc = subprocess.run(
-                ["uv", "run", "python", "integrations/run_bodhi_risk_insight.py"],
-                cwd=ROOT, capture_output=True, text=True,
-            )
+        progress = st.sidebar.empty()
+        returncode, full_log, _ = _run_with_live_progress(
+            ["uv", "run", "python", "integrations/run_bodhi_risk_insight.py"], ROOT, progress,
+            "sending today's shortlist to Bodhi and polling for its analysis (typically 60-120s)...",
+        )
         with st.sidebar.expander("Bodhi run log", expanded=True):
-            st.code((proc.stdout or "") + (proc.stderr or ""), language="text")
-        if proc.returncode == 0:
+            st.code(full_log, language="text")
+        if returncode == 0:
             st.sidebar.success("Bodhi Risk Insight received — see the log above, or Telegram.")
         else:
             st.sidebar.error("Bodhi call failed — see log above.")
@@ -764,6 +863,18 @@ def render_stock_section(analysis: dict):
         st.markdown(f"**Technical:** {analysis['technical'].get('read', '')}")
         flags = ", ".join(analysis["risk"].get("flags", []))
         st.markdown(f"**Risk flags:** {flags}")
+
+        # Real memory & context — what this run's own memory layer saw
+        # across past calls on this exact stock, not just today's
+        # snapshot (memory/memory_layer.py::build_delta()/consolidate_trend()).
+        memory_trend = analysis.get("memory_trend")
+        memory_delta = analysis.get("memory_delta")
+        if memory_trend or (memory_delta and "no prior context" not in memory_delta.lower()):
+            with st.expander("🧠 Memory — what changed across past calls on this stock", expanded=False):
+                if memory_delta:
+                    st.markdown(f"**Since last call:** {memory_delta}")
+                if memory_trend:
+                    st.markdown(f"**Multi-call trend:** {memory_trend}")
 
         event = analysis.get("event", {})
         if event:
@@ -1034,6 +1145,137 @@ def render_intraday_tab():
                     cols[2].metric("Target", f"₹{p['target']:.2f}")
 
 
+def render_activity_tab():
+    """Real operator-visible history — recent swing runs and every real
+    approval-gate state transition — so day-to-day operation doesn't
+    require hunting through output/ by hand."""
+    st.caption(
+        "Recent swing runs, and every real approval-gate decision — "
+        "pending, approved, and rejected — so you can see what happened "
+        "without opening files by hand."
+    )
+
+    st.subheader("Recent swing runs")
+    runs = list_runs()[:8]
+    if not runs:
+        st.info("No swing runs yet.")
+    else:
+        for path in runs:
+            try:
+                data = load_run(path)
+            except Exception:
+                continue
+            date_label = path.stem.replace("analysis_", "")
+            results_by_tier = data.get("results_by_tier") or {}
+            tier_summaries = ", ".join(
+                f"{tier}: {len(r.get('shortlist', []))} pick(s)"
+                for tier, r in results_by_tier.items()
+            ) or "no shortlist"
+            st.write(f"📅 **{date_label}** — {tier_summaries}")
+
+    st.divider()
+    st.subheader("Approval history")
+    col_pending, col_approved, col_rejected = st.columns(3)
+
+    with col_pending:
+        st.markdown("**⏸ Pending**")
+        pending = approval_gate.list_pending()
+        if not pending:
+            st.caption("None")
+        for path in pending[:5]:
+            record = approval_gate.load(path)
+            n_picks = sum(len(r.get("shortlist", [])) for r in (record.get("results_by_tier") or {}).values())
+            st.write(f"{record.get('date', '?')} — {n_picks} pick(s)")
+
+    with col_approved:
+        st.markdown("**✅ Approved**")
+        approved = approval_gate.list_approved()
+        if not approved:
+            st.caption("None")
+        for path in approved[:5]:
+            record = approval_gate.load(path)
+            st.write(f"{record.get('date', '?')} — {record.get('approved_at', '?')[:16]}")
+
+    with col_rejected:
+        st.markdown("**🚫 Rejected**")
+        rejected = approval_gate.list_rejected()
+        if not rejected:
+            st.caption("None")
+        for path in rejected[:5]:
+            record = approval_gate.load(path)
+            reason = record.get("rejection_reason", "")
+            st.write(f"{record.get('date', '?')} — {reason or '(no reason given)'}")
+
+    st.divider()
+    st.subheader("🛠 Real tool calls agents made mid-reasoning")
+    st.caption(
+        "Not the LLM calls themselves — real external tool I/O an agent "
+        "triggered while reasoning, e.g. the Decision Agent's live "
+        "TradingView quote (integrations/tradingview_quote.py). Read "
+        "straight from output/tool_call_log.jsonl."
+    )
+    tool_calls = observability.read_recent("tool_calls", n=15)
+    if not tool_calls:
+        st.caption("None yet — enable TRADINGVIEW_QUOTE_ENABLED and run a swing analysis.")
+    else:
+        for c in tool_calls:
+            icon = "✅" if c.get("success") else "❌"
+            latency = c.get("latency_ms")
+            latency_txt = f", {latency / 1000:.1f}s" if latency else ""
+            st.write(
+                f"{icon} `{c.get('tool')}` → **{c.get('target')}** "
+                f"(by {c.get('agent', '?')}{latency_txt}) — {c.get('timestamp', '?')}"
+            )
+
+    st.divider()
+    st.subheader("🔀 Orchestrator routing decisions")
+    st.caption(
+        "The decide → reflect → route retry loop's real branch decisions "
+        "(agents/orchestrator_agent.py) — every time it accepted a "
+        "Decision Agent output as-is vs. sent it back with feedback for "
+        "another attempt, and why."
+    )
+    decisions = observability.read_recent("decisions", n=10)
+    if not decisions:
+        st.caption("None yet — run a swing analysis.")
+    else:
+        for d in decisions:
+            icon = "🔁" if d.get("next_step") == "retry_decision" else "✅"
+            n_issues = len(d.get("issues_found") or [])
+            with st.expander(
+                f"{icon} [{d.get('tier', '?')}] {d.get('next_step', '?')} "
+                f"— {n_issues} issue(s) — {d.get('timestamp', '?')}",
+                expanded=False,
+            ):
+                st.write(f"**Reason:** {d.get('reason', '?')}")
+                if d.get("issues_found"):
+                    st.write("**Issues found:**")
+                    for i in d["issues_found"]:
+                        st.write(f"- {i}")
+
+    st.divider()
+    st.subheader("🩹 Repairs, budget warnings, and real failures")
+    st.caption(
+        "output/reliability_log.jsonl, distinguishing REPAIRS (a malformed "
+        "tool/verdict result the code fixed automatically instead of "
+        "discarding — schemas.py) from real failures/warnings. Neither "
+        "kind ever blocked the run that produced it."
+    )
+    events = observability.read_recent("failures", n=15)
+    if not events:
+        st.caption("None yet — run a swing analysis.")
+    else:
+        for e in events:
+            component = e.get("component", "?")
+            if "repaired" in component:
+                icon = "🩹"
+            elif component == "bodhi_token_budget_exceeded":
+                icon = "💰"
+            else:
+                icon = "⚠️"
+            st.write(f"{icon} `{component}` — {e.get('detail', '?')} ({e.get('timestamp', '?')})")
+
+
 def main():
     st.set_page_config(page_title="AI Equity Analyst", page_icon="📈", layout="wide")
     inject_terminal_css()
@@ -1056,11 +1298,15 @@ def main():
     st.sidebar.divider()
     render_run_controls()
 
-    swing_tab, intraday_tab = st.tabs(["📊 Swing shortlist", "⚡ Intraday scan"])
+    swing_tab, intraday_tab, activity_tab = st.tabs(
+        ["📊 Swing shortlist", "⚡ Intraday scan", "📜 Activity"]
+    )
     with swing_tab:
         render_swing_tab()
     with intraday_tab:
         render_intraday_tab()
+    with activity_tab:
+        render_activity_tab()
 
 
 if __name__ == "__main__":

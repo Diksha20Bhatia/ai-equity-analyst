@@ -19,6 +19,15 @@ langgraph>=0.2.0           # the Orchestrator's decide->reflect->route loop
                             # (agents/orchestrator_agent.py) is a real
                             # LangGraph state machine, not a hand-rolled while loop
 
+# --- Typed contracts (schemas.py) ---
+pydantic>=2.0.0             # explicit validated shapes at every agent-to-agent
+                            # and workflow-to-code boundary — see schemas.py
+
+# --- Real MCP client/server (integrations/mcp_server.py + mcp_pipeline_client.py) ---
+mcp>=2.0.0                  # official MCP Python SDK — a real Tools+Resources+Prompts
+                            # server over stdio transport, distinct from Bodhi's own
+                            # HTTP-based bodhi-deep-research tool
+
 # --- Investor profile parsing (only what you use is required) ---
 pypdf>=4.0.0               # .pdf profiles
 python-docx>=1.1.0         # .docx profiles
@@ -35,3 +44,17 @@ plotly>=5.24.0              # charts inside the dashboard
 # --- Observability (optional — see observability.py) ---
 langsmith>=0.1.147         # traces every AI call + pipeline step to LangSmith,
                             # only active if LANGSMITH_API_KEY is set in .env
+
+# --- Approval microservice (service/approval_service.py) ---
+# A genuinely SEPARATE, independently deployable service wrapping the
+# same alerts/approval_gate.py + approve_run.py logic everything else
+# uses — run standalone with `uv run uvicorn service.approval_service:app`
+# or via service/Dockerfile. See service/README.md.
+fastapi>=0.115.0
+uvicorn>=0.30.0
+
+# --- Tests ---
+pytest>=8.0.0               # uv run pytest tests/ — see tests/ for the real,
+                            # mocked-network, isolated-storage suite
+httpx>=0.27.0               # required by fastapi.testclient.TestClient
+                            # (tests/test_approval_service.py) — not used at runtime

@@ -26,6 +26,16 @@ quality DECISION — is this issue worth a retry, and what should the
 Decision Agent specifically fix — is a judgment call, so that part is a
 real LLM call. Retries are hard-capped (max_retries) regardless of what
 the LLM says, so a stuck loop can never run away.
+
+Before this loop even starts, run.py runs a SEPARATE real multi-agent
+step: agents/research_graph.py fans out to a Bull Case Agent and a Bear
+Case Agent in genuine parallel (verified concurrent — see
+tests/test_research_graph.py), each independently arguing its case with
+no visibility into the other's output. Their two independent analyses are
+what the Decision Agent inside this loop actually adjudicates between,
+rather than inventing both sides of the argument alone. That's the
+project's real answer to genuine task decomposition + multi-agent
+collaboration, not just sequential agent-calls-agent.
 """
 
 from typing import TypedDict
@@ -33,7 +43,9 @@ from typing import TypedDict
 from langgraph.graph import StateGraph, END
 
 from agents.base_agent import BaseAgent
+import observability
 from observability import traceable
+from schemas import DecisionResult, ValidationError
 
 
 class OrchestratorAgent(BaseAgent):
@@ -64,11 +76,14 @@ class OrchestratorAgent(BaseAgent):
 
 
 class TierState(TypedDict):
+    tier: str
     analyses: list
     profile: dict
     market_context: dict
     memory_deltas: list
     top_n: int
+    bull_analysis: dict
+    bear_analysis: dict
     decision_result: dict
     issues: list
     retries: int
@@ -82,9 +97,21 @@ def _check_decision_quality(result: dict, analyses: list, top_n: int) -> list:
     """
     Deterministic self-check on the Decision Agent's own output — the
     "Self Reflection" step. Every check here has one objectively correct
-    answer (a required field is present or it isn't), same philosophy as
-    every non-AI agent in this codebase: never use an LLM where a formula
-    can answer the question.
+    answer (a required field is present, a score is in range, an action
+    is one of the documented values), same philosophy as every non-AI
+    agent in this codebase: never use an LLM where a formula can answer
+    the question.
+
+    Two passes: a typed SHAPE check against schemas.DecisionResult (every
+    field present with the right type and range — a single reusable
+    contract instead of hand-checking each field here), then a small set
+    of cross-field BUSINESS-RULE checks pydantic's per-field validation
+    can't express (e.g. "avoid" with a high opportunity score is
+    internally inconsistent even though both fields are individually
+    valid). A shape violation becomes a normal issue string here — it
+    feeds the SAME retry loop as everything else, so a malformed reply
+    gets sent back with specific feedback instead of crashing later in
+    _suggest_quantity/_allocate_capital.
     """
     issues = []
     shortlist = (result or {}).get("shortlist") or []
@@ -92,23 +119,21 @@ def _check_decision_quality(result: dict, analyses: list, top_n: int) -> list:
         issues.append("shortlist is empty")
         return issues
 
+    try:
+        DecisionResult.model_validate(result)
+    except ValidationError as e:
+        for err in e.errors():
+            loc = ".".join(str(p) for p in err["loc"])
+            issues.append(f"shape: {loc} — {err['msg']}")
+
     if len(shortlist) > top_n:
         issues.append(f"shortlist has {len(shortlist)} picks, more than the requested top_n={top_n}")
 
     quality_flags = {a["symbol"]: a.get("data_quality") for a in analyses}
     for pick in shortlist:
         sym = pick.get("symbol", "?")
-        for field in ("bull_case", "bear_case", "target_price", "action"):
-            if not pick.get(field) and pick.get(field) != 0:
-                issues.append(f"{sym}: missing '{field}'")
-
         conf = pick.get("confidence")
-        if conf is not None and not (0 <= conf <= 100):
-            issues.append(f"{sym}: confidence {conf} is out of the 0-100 range")
-
         opp = pick.get("opportunity_score")
-        if opp is not None and not (0 <= opp <= 100):
-            issues.append(f"{sym}: opportunity_score {opp} is out of the 0-100 range")
 
         if pick.get("action") == "avoid" and (opp or 0) >= 70:
             issues.append(f"{sym}: action is 'avoid' but opportunity_score is {opp} — internally inconsistent")
@@ -132,6 +157,7 @@ def build_tier_graph(decision_agent, orchestrator_agent):
         result = decision_agent.run(
             state["analyses"], state["profile"], state["market_context"],
             state["memory_deltas"], top_n=state["top_n"], feedback=state.get("feedback", ""),
+            bull_analysis=state.get("bull_analysis"), bear_analysis=state.get("bear_analysis"),
         )
         return {"decision_result": result}
 
@@ -141,24 +167,34 @@ def build_tier_graph(decision_agent, orchestrator_agent):
 
     def route_node(state: TierState) -> dict:
         retries = state["retries"]
+        tier = state.get("tier", "?")
+
         if not state["issues"]:
-            return {"next": "finish", "route_reason": "quality check passed — no issues found", "feedback": ""}
-        if retries >= state["max_retries"]:
-            return {
+            result = {"next": "finish", "route_reason": "quality check passed — no issues found", "feedback": ""}
+        elif retries >= state["max_retries"]:
+            result = {
                 "next": "finish",
                 "route_reason": f"{len(state['issues'])} issue(s) remain but max_retries "
                                 f"({state['max_retries']}) reached — accepting output as-is",
                 "feedback": "",
             }
-        decision = orchestrator_agent.route(state["issues"], retries, state["max_retries"])
-        if decision.get("next") == "retry_decision":
-            return {
-                "next": "retry_decision",
-                "route_reason": decision.get("reason", ""),
-                "feedback": decision.get("feedback_for_decision_agent", ""),
-                "retries": retries + 1,
-            }
-        return {"next": "finish", "route_reason": decision.get("reason", ""), "feedback": ""}
+        else:
+            decision = orchestrator_agent.route(state["issues"], retries, state["max_retries"])
+            if decision.get("next") == "retry_decision":
+                result = {
+                    "next": "retry_decision",
+                    "route_reason": decision.get("reason", ""),
+                    "feedback": decision.get("feedback_for_decision_agent", ""),
+                    "retries": retries + 1,
+                }
+            else:
+                result = {"next": "finish", "route_reason": decision.get("reason", ""), "feedback": ""}
+
+        observability.record_orchestrator_decision(
+            tier=tier, retries=retries, issues=state["issues"],
+            next_step=result["next"], reason=result["route_reason"],
+        )
+        return result
 
     def should_retry(state: TierState) -> str:
         return "decide" if state.get("next") == "retry_decision" else "end"

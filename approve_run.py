@@ -39,7 +39,12 @@ def _summarize(record: dict) -> str:
     tv_symbols = record.get("tv_symbols") or []
     lines.append(f"TradingView candidates: {', '.join(tv_symbols) or '(none)'}")
     if record.get("bodhi_ran"):
-        lines.append("Bodhi risk verification: ran (full report will also be sent to Telegram)")
+        branch = "escalated (deeper review ran)" if record.get("bodhi_escalation_branch_fired") \
+            else "clean (no escalation needed)"
+        lines.append(f"Bodhi risk verification: ran, branch outcome: {branch} "
+                      f"(full report will also be sent to Telegram)")
+        if record.get("bodhi_research_degraded"):
+            lines.append("  ⚠ research tool degraded mid-run — verdicts may be reasoning-only, review before approving")
     return "\n".join(lines)
 
 

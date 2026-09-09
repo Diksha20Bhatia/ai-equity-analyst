@@ -59,6 +59,52 @@
       "targetPosition": "left"
     },
     {
+      "id": "6b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+      "type": "subworkflow",
+      "data": {
+        "label": "Sub Workflow",
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom",
+        "variables": [
+          {
+            "name": "input.StockSymbol",
+            "type": "string",
+            "path": "input.variable.StockSymbol",
+            "description": "one real NSE ticker, e.g. RELIANCE"
+          },
+          {
+            "name": "input.StockContext",
+            "type": "string",
+            "path": "input.variable.StockContext",
+            "description": "that stock's real data — sector, price, scores, bull/bear case — same shape as one entry from Investmentportfolio in the main risk-review workflow"
+          },
+          {
+            "name": "result",
+            "type": "string",
+            "path": "data.result",
+            "description": ""
+          }
+        ],
+        "input": {
+          "workflowid": "6f0c56aa-2a98-4ccf-968d-df48cbdf8fb8",
+          "variable": {},
+          "allowInfiniteRecursion": false
+        },
+        "output": {}
+      },
+      "measured": {
+        "width": 212,
+        "height": 152
+      },
+      "position": {
+        "x": 160,
+        "y": 500
+      },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
       "id": "1b24adf3-6531-433f-a62c-6ccb948ef78c",
       "data": {
         "input": {
@@ -599,6 +645,80 @@
       "targetPosition": "left"
     },
     {
+      "id": "bc5a6ac0-20d2-4db2-8400-6730ee04add8",
+      "data": {
+        "input": {
+          "variableName": "validated_final_verdicts",
+          "expression": "(function() {\n  const payload = {{Set Combine Final Verdict[data.final_verdicts]}};\n  if (!payload || payload.length < 10) {\n    return 'FALLBACK: no substantive verdict was produced by this run — treat every symbol as unverified rather than trusting an empty or near-empty payload.';\n  }\n  return payload;\n})()"
+        },
+        "label": "Set Validate Final Payload",
+        "output": {
+          "data": {
+            "validated_final_verdicts": ""
+          }
+        },
+        "variables": [
+          {
+            "name": "validated_final_verdicts",
+            "path": "data.response[\"validated_final_verdicts\"]",
+            "type": "string",
+            "description": "",
+            "default": ""
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "set-variable",
+      "measured": {
+        "width": 240,
+        "height": 62
+      },
+      "position": {
+        "x": 1760,
+        "y": 220
+      },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "8c9d0e1f-2a3b-4c5d-9e0f-1a2b3c4d5e6f",
+      "data": {
+        "input": {
+          "url": "https://placehold.co/600x400?text=Preview",
+          "layout": {
+            "row_height": 48,
+            "margin": [2, 2],
+            "padding": [0, 0],
+            "tiles": [
+              {"i": "o1", "x": 0, "y": 0, "w": 12, "h": 2, "data": {"displayType": "text"}},
+              {"i": "o2", "x": 0, "y": 2, "w": 6, "h": 2, "data": {"displayType": "text"}},
+              {"i": "o3", "x": 6, "y": 2, "w": 6, "h": 2, "data": {"displayType": "text"}},
+              {"i": "o4", "x": 0, "y": 3, "w": 6, "h": 2, "data": {"displayType": "text"}},
+              {"i": "o5", "x": 6, "y": 3, "w": 6, "h": 2, "data": {"displayType": "text"}}
+            ]
+          }
+        },
+        "label": "Preview Final Payload",
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom",
+        "type": "url"
+      },
+      "type": "preview",
+      "measured": {
+        "width": 240,
+        "height": 62
+      },
+      "position": {
+        "x": 1760,
+        "y": 380
+      },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
       "id": "5e7242d6-97bd-45b0-9dc9-1b1c65bc812f",
       "data": {
         "label": "End",
@@ -607,7 +727,7 @@
             {
               "name": "result",
               "type": "string",
-              "value": "{{Set Combine Final Verdict[data.final_verdicts]}}"
+              "value": "{{Set Validate Final Payload[data.validated_final_verdicts]}}"
             }
           ]
         },
@@ -621,7 +741,7 @@
         ],
         "outputData": {
           "data": {
-            "result": "{{Set Combine Final Verdict[data.final_verdicts]}}"
+            "result": "{{Set Validate Final Payload[data.validated_final_verdicts]}}"
           }
         },
         "layoutDirection": "LR",
@@ -633,7 +753,7 @@
         "height": 32
       },
       "position": {
-        "x": 1900,
+        "x": 2140,
         "y": 240
       },
       "selected": false,
@@ -648,6 +768,14 @@
       "type": "add-edge",
       "source": "01414015-7993-4c3b-9f94-3ba20a55b75c",
       "target": "1b24adf3-6531-433f-a62c-6ccb948ef78c"
+    },
+    {
+      "id": "e-start-subworkflow",
+      "type": "add-edge",
+      "source": "01414015-7993-4c3b-9f94-3ba20a55b75c",
+      "target": "6b1c2d3e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+      "sourceHandle": "output",
+      "targetHandle": "input"
     },
     {
       "id": "e-mcp-risk",
@@ -704,10 +832,22 @@
       "target": "d87ae016-7e81-4c5d-ade0-1de3a2bfe078"
     },
     {
-      "id": "e-combine-end",
+      "id": "e-combine-validate",
       "type": "add-edge",
       "source": "d87ae016-7e81-4c5d-ade0-1de3a2bfe078",
+      "target": "bc5a6ac0-20d2-4db2-8400-6730ee04add8"
+    },
+    {
+      "id": "e-validate-end",
+      "type": "add-edge",
+      "source": "bc5a6ac0-20d2-4db2-8400-6730ee04add8",
       "target": "5e7242d6-97bd-45b0-9dc9-1b1c65bc812f"
+    },
+    {
+      "id": "e-validate-preview",
+      "type": "add-edge",
+      "source": "bc5a6ac0-20d2-4db2-8400-6730ee04add8",
+      "target": "8c9d0e1f-2a3b-4c5d-9e0f-1a2b3c4d5e6f"
     }
   ],
   "viewport": {

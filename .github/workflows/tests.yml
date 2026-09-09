@@ -1,0 +1,50 @@
+name: tests
+
+# Regression gating: the 58+ pytest tests in tests/ (mocked network,
+# isolated storage — see tests/conftest.py) run on every push and PR so a
+# routing/retrieval/decision-agent regression is caught in CI, not
+# noticed later in a real run. No real AI calls, no real Bodhi/Telegram/
+# TradingView credentials are used or required — everything real those
+# tests would hit is mocked at the boundary.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the test suite
+        run: pytest tests/ -v
+
+      - name: Sanity-check every module imports cleanly
+        run: |
+          python -c "
+          import config, observability, schemas
+          import agents.base_agent, agents.bull_case_agent, agents.bear_case_agent
+          import agents.decision_agent, agents.orchestrator_agent, agents.research_graph
+          import memory.memory_layer, memory.knowledge_base
+          import integrations.bodhi_client, integrations.bodhi_risk_insights, integrations.tradingview_quote
+          import integrations.mcp_server, integrations.mcp_pipeline_client, integrations.mcp_tool_guard
+          import alerts.approval_gate, alerts.telegram_alert, alerts.tradingview_watchlist
+          import safety.text_safety, safety.verification_guardrail
+          import approve_run, service.approval_service
+          print('all modules import cleanly')
+          "
+
+      - name: Tool-shadowing check on the real checked-in Bodhi workflow JSON
+        run: |
+          python integrations/mcp_tool_guard.py
+          python integrations/mcp_tool_guard.py integrations/bodhi_workflow/subflow-symbol-risk-check.json

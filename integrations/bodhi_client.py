@@ -51,6 +51,31 @@ def start_bodhi_run(
     return run_id
 
 
+def _node_progress_summary(data: Dict[str, Any]) -> Optional[str]:
+    """Best-effort: Bodhi's own per-run node results
+    (exec_metadata.allOutputs — the same field confirmed present in a
+    completed/errored run's response) sometimes populate DURING a still
+    in-progress poll, not only at the end. When they do, this turns them
+    into a real "which nodes have actually finished so far" progress
+    line instead of an opaque "in-progress" — genuine intermediate
+    workflow state, not a guessed percentage. Returns None if the shape
+    isn't present in this response (e.g. Bodhi hasn't populated it yet
+    for this run, or never does for this workflow); never raises — a
+    missing progress detail must never break polling itself."""
+    try:
+        all_outputs = (data.get("exec_metadata") or {}).get("allOutputs") or {}
+        for nodes in all_outputs.values():
+            if not isinstance(nodes, dict):
+                continue
+            done = [label for label, n in nodes.items()
+                    if isinstance(n, dict) and n.get("status") in ("success", "completed")]
+            if done:
+                return f"completed so far: {', '.join(done)}"
+    except (AttributeError, TypeError):
+        pass
+    return None
+
+
 def poll_bodhi_run(
     base_url: str,
     pat_token: str,
@@ -68,7 +93,8 @@ def poll_bodhi_run(
         response.raise_for_status()
         data = response.json()
         status = str(data.get("status", "")).lower()
-        print(f"[bodhi] status: {status}")
+        progress = _node_progress_summary(data)
+        print(f"[bodhi] status: {status}" + (f" — {progress}" if progress else ""))
 
         if status in ("completed", "success", "succeeded"):
             return data

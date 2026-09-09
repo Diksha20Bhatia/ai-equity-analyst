@@ -54,6 +54,11 @@ def list_approved() -> list:
     return sorted(APPROVED_DIR.glob("run_*.json"), reverse=True)
 
 
+def list_rejected() -> list:
+    REJECTED_DIR.mkdir(parents=True, exist_ok=True)
+    return sorted(REJECTED_DIR.glob("run_*.json"), reverse=True)
+
+
 def load(path) -> dict:
     return json.loads(Path(path).read_text())
 

@@ -1,0 +1,240 @@
+{
+  "nodes": [
+    {
+      "id": "decd4bf9-0af3-45af-8ae1-78180c30c180",
+      "data": {
+        "input": {
+          "variables": [
+            {
+              "name": "StockSymbol",
+              "type": "string",
+              "value": "default value",
+              "description": "one real NSE ticker, e.g. RELIANCE"
+            },
+            {
+              "name": "StockContext",
+              "type": "string",
+              "value": "default value",
+              "description": "that stock's real data — sector, price, scores, bull/bear case — same shape as one entry from Investmentportfolio in the main risk-review workflow"
+            }
+          ],
+          "description": "workflow variables — a single-stock scoped input, deliberately smaller than the main workflow's whole-portfolio Investmentportfolio variable, so this can be called once per stock from any pipeline"
+        },
+        "label": "start",
+        "output": {
+          "data": {
+            "StockSymbol": "default value",
+            "StockContext": "default value"
+          }
+        },
+        "variables": [
+          {
+            "name": "StockSymbol",
+            "path": "StockSymbol",
+            "type": "string",
+            "description": "Custom Variable StockSymbol of type string"
+          },
+          {
+            "name": "StockContext",
+            "path": "StockContext",
+            "type": "string",
+            "description": "Custom Variable StockContext of type string"
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "control-start",
+      "measured": { "width": 32, "height": 32 },
+      "position": { "x": 60, "y": 200 },
+      "selected": false,
+      "deletable": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "5b5b1df4-6222-414e-bd65-8e90949b7565",
+      "data": {
+        "input": {
+          "tools": ["bodhi_deep_research-deep_research"],
+          "server": {
+            "env": {},
+            "url": "https://bodhi-mcp.sandbox.psbodhi.live/mcp/bodhi_deep_research",
+            "args": [],
+            "name": "bodhi-deep-research",
+            "tools": [
+              {
+                "name": "bodhi_deep_research-deep_research",
+                "description": "Conduct deep research on a given topic and generate a comprehensive report.",
+                "inputSchema": {
+                  "type": "object",
+                  "required": ["topic"],
+                  "properties": { "topic": { "type": "string" } }
+                },
+                "outputSchema": {
+                  "type": "object",
+                  "required": ["result"],
+                  "properties": { "result": { "type": "string" } },
+                  "x-fastmcp-wrap-result": true
+                }
+              }
+            ],
+            "authKey": "",
+            "command": "",
+            "headers": { "authorization": "Bearer {{$context[access_token]}}" },
+            "transport": "http"
+          },
+          "serverName": "bodhi-deep-research",
+          "selectedCredentialId": null
+        },
+        "label": "bodhi-deep-research",
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "mcp-tools",
+      "measured": { "width": 201, "height": 54 },
+      "position": { "x": 280, "y": 340 },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "9bfd2772-9f3d-46be-9a0f-57f6e9341444",
+      "data": {
+        "input": {
+          "name": "Quick Risk Check Agent",
+          "role": "default",
+          "model": "claude-sonnet-4-5@20250929",
+          "skills": [],
+          "showPlan": false,
+          "userquery": "Run the quick risk check now for this one stock, following the instructions above.",
+          "description": "agent description...",
+          "systemPrompt": "You are a quick, single-stock risk reviewer — a smaller, reusable version of the full multi-agent risk-review workflow's first pass, meant to be called once per stock from any pipeline that needs a fast real-research-backed verdict without the full escalation depth.\n\nStock: {{$var[StockSymbol]o}}\nReal data for this stock (sector, price, scores, bull/bear case): {{$var[StockContext]o}}\n\nUse your research tool to investigate CURRENT, REAL risk factors specific to THIS stock — tie every risk you raise back to its actual sector/exposure in the data above, not a generic market overview.\n\nEnd your answer with ONLY this JSON, nothing after it. Output the raw JSON object directly — do NOT wrap it in a markdown code fence, do NOT use triple backticks anywhere in your answer, start your answer with { and end it with }, nothing else before or after:\n{\"symbol\": \"...\", \"verdict\": \"clear\" | \"caution\" | \"avoid\", \"notes\": \"one or two sentences, cite the specific real reason\"}\n",
+          "default_tools": [],
+          "guardrailChecks": [],
+          "roleDescription": "",
+          "selectedPersonaId": "",
+          "selectedSourceSetIds": []
+        },
+        "label": "Quick Risk Check Agent",
+        "output": {
+          "response": { "output": "" }
+        },
+        "variables": [
+          {
+            "name": "response",
+            "path": "data.result.response",
+            "type": "string",
+            "description": "agent response text"
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "agent-custom",
+      "measured": { "width": 199, "height": 62 },
+      "position": { "x": 560, "y": 200 },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "76053fa3-4014-481b-b56f-fe92409aca40",
+      "data": {
+        "input": {
+          "variableName": "quick_verdict",
+          "expression": "(function() {\n  const raw = {{Quick Risk Check Agent[data.result.response]}};\n  return raw;\n})()"
+        },
+        "label": "Set Quick Verdict",
+        "output": {
+          "data": { "quick_verdict": "" }
+        },
+        "variables": [
+          {
+            "name": "quick_verdict",
+            "path": "data.response[\"quick_verdict\"]",
+            "type": "string",
+            "description": "",
+            "default": ""
+          }
+        ],
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "set-variable",
+      "measured": { "width": 240, "height": 62 },
+      "position": { "x": 840, "y": 200 },
+      "selected": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    },
+    {
+      "id": "d1e6284e-4513-4180-930f-b6dcc664e450",
+      "data": {
+        "label": "End",
+        "output": {
+          "variables": [
+            {
+              "name": "result",
+              "type": "string",
+              "value": "{{Set Quick Verdict[data.quick_verdict]}}"
+            }
+          ]
+        },
+        "variables": [
+          {
+            "name": "result",
+            "path": "result",
+            "type": "string",
+            "description": "Output Variable result of type string"
+          }
+        ],
+        "outputData": {
+          "data": { "result": "{{Set Quick Verdict[data.quick_verdict]}}" }
+        },
+        "layoutDirection": "LR",
+        "auxiliaryHandlePosition": "bottom"
+      },
+      "type": "control-end",
+      "measured": { "width": 32, "height": 32 },
+      "position": { "x": 1120, "y": 200 },
+      "selected": false,
+      "deletable": false,
+      "sourcePosition": "right",
+      "targetPosition": "left"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-start-agent",
+      "type": "add-edge",
+      "source": "decd4bf9-0af3-45af-8ae1-78180c30c180",
+      "target": "9bfd2772-9f3d-46be-9a0f-57f6e9341444"
+    },
+    {
+      "id": "e-mcp-agent",
+      "type": "add-edge",
+      "source": "5b5b1df4-6222-414e-bd65-8e90949b7565",
+      "target": "9bfd2772-9f3d-46be-9a0f-57f6e9341444",
+      "sourceHandle": "output",
+      "targetHandle": "tools"
+    },
+    {
+      "id": "e-agent-set",
+      "type": "add-edge",
+      "source": "9bfd2772-9f3d-46be-9a0f-57f6e9341444",
+      "target": "76053fa3-4014-481b-b56f-fe92409aca40"
+    },
+    {
+      "id": "e-set-end",
+      "type": "add-edge",
+      "source": "76053fa3-4014-481b-b56f-fe92409aca40",
+      "target": "d1e6284e-4513-4180-930f-b6dcc664e450"
+    }
+  ],
+  "viewport": {
+    "x": 0,
+    "y": 0,
+    "zoom": 0.6
+  }
+}

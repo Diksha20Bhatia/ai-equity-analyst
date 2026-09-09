@@ -7,3 +7,4 @@ output/*.json
 data/cache/
 profile/_dashboard/
 /output/*.txt
+output/*.jsonl
