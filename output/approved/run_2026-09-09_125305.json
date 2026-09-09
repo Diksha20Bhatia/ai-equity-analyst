@@ -1,0 +1,204 @@
+{
+  "created_at": "2026-09-09T12:53:05",
+  "date": "2026-09-09",
+  "results_by_tier": {
+    "moderate": {
+      "shortlist": [
+        {
+          "symbol": "APOLLOHOSP",
+          "opportunity_score": 74,
+          "confidence": 62,
+          "action": "accumulate",
+          "bull_case": "I agree with the Bull Case Agent: Q2 FY26 momentum (revenue up ~16% YoY, EPS ~\u20b9135) alongside very strong technicals (9.5/10, 20\u2011day breakout, near 52\u2011week highs) argues the trend remains up. Defensive sector positioning also helps in a weak tape, and RSI 56.8 leaves room before it gets stretched.",
+          "bear_case": "The Bear Case Agent fairly flags thin participation (0.6x volume) and only +0.8% over 1 month despite being near highs\u2014classic fatigue risk at an above\u2011history valuation. I think that overstates immediate downside given the fresh breakout, but a low\u2011volume breakout can fail quickly if results cadence cools.",
+          "thesis": "High\u2011quality hospital comp with earnings support and leadership\u2011type price action in a soft market. Breakout + defensive sector makes it a short\u2011horizon momentum candidate, though valuation means moves can be two\u2011sided. LIVE quote (~\u20b98,960.5) is broadly in line with the stated price\u2014no extra real\u2011time dislocation to factor.",
+          "target_price": 9869.2,
+          "target_price_rationale": "Breakout continuation towards ~1 ATR extensions above the 52\u2011week high, in line with the Bull Agent\u2019s target.",
+          "near_term_outlook": "Buy\u2011the\u2011dip behavior likely while RSI stays mid\u201150s and the breakout zone holds. Expect \u20b9145\u2013\u20b9150 daily swings (ATR) and retests of recent highs; failure to add volume on up days would cap near\u2011term upside.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Balances the watchlist\u2019s Tech skew (3 names) with Healthcare (2); taking only one of the Healthcare names avoids over\u2011concentration.",
+          "invalidation": "A decisive close back below the recent breakout band (~\u20b98,600\u2013\u20b98,650) on rising volume.",
+          "key_risk": "Valuation de\u2011rating if growth or margin cadence slows despite recent strong print.",
+          "current_price": 8972.0,
+          "performance": {
+            "1w": {
+              "change_pct": 2.48,
+              "high": 8972.0,
+              "low": 8650.0
+            },
+            "1m": {
+              "change_pct": 0.79,
+              "high": 8972.0,
+              "low": 8587.0
+            },
+            "6m": {
+              "change_pct": 15.12,
+              "high": 9039.48,
+              "low": 7136.69
+            }
+          },
+          "risk_percent": 0,
+          "conviction": "LOW",
+          "conviction_note": "Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual.",
+          "suggested_quantity": {
+            "min": 0,
+            "max": 0,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 0
+        },
+        {
+          "symbol": "ADANIPORTS",
+          "opportunity_score": 68,
+          "confidence": 58,
+          "action": "accumulate",
+          "bull_case": "The Bull Case Agent notes a durable uptrend (technical 8/10), +25.6%/6m, 20\u2011day breakout and +9.4% vs Nifty over 1m\u2014buyers continue to back it despite volatility. I agree: tape strength after a negative headline reaction suggests underlying demand on dips.",
+          "bear_case": "I also agree with the Bear Case Agent that the \u22123% reaction to a strong Q1 reflects peak\u2011expectations risk; at an above\u2011history valuation, the next catalyst must beat to extend. ATR ~\u20b939.6 implies swings can be sharp if sentiment wobbles.",
+          "thesis": "Trend leadership in ports/infrastructure with constructive volume (1.3x) and relative strength. Short\u2011horizon setup favors adding on weakness rather than chasing, acknowledging elevated expectations. LIVE quote (~\u20b91,765) matches the stated price\u2014no extra intraday skew.",
+          "target_price": 1976.8,
+          "target_price_rationale": "Retest of the 6\u2011month high zone (~\u20b91,883) and extension consistent with the breakout/ATR framework.",
+          "near_term_outlook": "Likely to range with an upward bias; dips toward the mid\u2011\u20b91,700s should find buyers if the broader market steadies. Sustained strength needs improving breadth/volume on up days.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Adds Industrials/Infrastructure exposure (1 name in watchlist) and diversifies away from Technology concentration.",
+          "invalidation": "A break and close below last week\u2019s low (~\u20b91,673) on heavy volume, or another high\u2011materiality miss leading to persistent relative underperformance.",
+          "key_risk": "Peak\u2011expectations: another strong print that fails to impress could trigger a deeper de\u2011rating.",
+          "current_price": 1765.0,
+          "performance": {
+            "1w": {
+              "change_pct": 5.52,
+              "high": 1765.0,
+              "low": 1672.7
+            },
+            "1m": {
+              "change_pct": 5.8,
+              "high": 1765.0,
+              "low": 1593.1
+            },
+            "6m": {
+              "change_pct": 25.63,
+              "high": 1883.2,
+              "low": 1298.13
+            }
+          },
+          "risk_percent": 0,
+          "conviction": "LOW",
+          "conviction_note": "Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual.",
+          "suggested_quantity": {
+            "min": 1,
+            "max": 4,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 4
+        },
+        {
+          "symbol": "TATASTEEL",
+          "opportunity_score": 66,
+          "confidence": 60,
+          "action": "accumulate",
+          "bull_case": "I align with the Bull Case Agent: recovery setup with a 20\u2011day breakout, RSI 62.3, 1.2x volume, and a recent 11% YoY profit lift provides a base\u2011to\u2011trend transition case. The flat 6\u2011month base offers a defined risk backdrop with room to tag prior resistance.",
+          "bear_case": "The Bear Case Agent is right that a flat 6\u2011month return and volatile post\u2011results reactions show sentiment is fragile and good news may be priced in. I see that as limiting magnitude rather than negating a tactical upswing from a compressed base.",
+          "thesis": "Constructive risk\u2011reward for a short\u2011horizon push from a multi\u2011month base amid improving tape statistics. Upside likely stair\u2011steps; not a runaway momentum play like some defensives. LIVE quote (~\u20b9189.2) roughly matches the stated print.",
+          "target_price": 212.34,
+          "target_price_rationale": "Revisit of the prior supply zone near \u20b9205\u2013\u20b9212, consistent with the Bull Agent\u2019s target and the 6\u2011month range top.",
+          "near_term_outlook": "Bias higher while the 20\u2011day breakout holds; ATR (~\u20b94.7) implies measured daily ranges. Support near last week\u2019s low (~\u20b9184) is important for trend confirmation.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Adds Basic Materials (1 name in watchlist), complementing Healthcare/Industrials and avoiding over\u2011weight to Tech.",
+          "invalidation": "Close back below ~\u20b9184\u2013\u20b9185 with expanding volume, indicating a failed breakout.",
+          "key_risk": "Cyclical pricing pressure or margin squeeze could blunt the breakout\u2019s follow\u2011through.",
+          "current_price": 189.59,
+          "performance": {
+            "1w": {
+              "change_pct": 2.93,
+              "high": 189.59,
+              "low": 184.15
+            },
+            "1m": {
+              "change_pct": 1.82,
+              "high": 189.59,
+              "low": 183.0
+            },
+            "6m": {
+              "change_pct": 0.02,
+              "high": 216.66,
+              "low": 179.8
+            }
+          },
+          "risk_percent": 0,
+          "conviction": "LOW",
+          "conviction_note": "Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual.",
+          "suggested_quantity": {
+            "min": 11,
+            "max": 39,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 39
+        },
+        {
+          "symbol": "TECHM",
+          "opportunity_score": 65,
+          "confidence": 55,
+          "action": "accumulate",
+          "bull_case": "I lean toward the Bull Case Agent: an \u2018impressive\u2019 Q1 and 6\u2011month +16.4% trend contrast with recent declines on just 0.3x volume, suggesting weak\u2011hand selling. RSI 36.0 near short\u2011term oversold zones supports a tactical rebound if sector pressure eases.",
+          "bear_case": "The Bear Case Agent correctly flags fading momentum (\u22127.9%/1m, RSI 36.0) and sector volatility; without better follow\u2011through, bounces can fail. I see that as a timing risk, not a thesis breaker, given the prior positive print.",
+          "thesis": "Best\u2011in\u2011set short\u2011horizon Tech candidate here: fundamental score 8/10, recent weakness on light volume, and prior result tailwind. It\u2019s still a tactical trade\u2014needs the IT tape to stabilize. LIVE price (~\u20b91,513) equals the stated level.",
+          "target_price": 1694.78,
+          "target_price_rationale": "Re\u2011test of the recent high zone (~\u20b91,669) and modest extension if momentum returns, per the Bull Agent\u2019s target.",
+          "near_term_outlook": "Expect choppy rebounds; stabilization above \u20b91,520\u2013\u20b91,550 would signal buyers returning. Sector headlines will likely drive gap risk day\u2011to\u2011day.",
+          "portfolio_fit": "good",
+          "portfolio_fit_note": "Introduces Technology exposure in a list otherwise skewed to non\u2011Tech (watchlist shows 3 Tech names; including one keeps balance).",
+          "invalidation": "A decisive close below ~\u20b91,510 (near the 1\u2011week low) on rising volume or a fresh negative business update.",
+          "key_risk": "Sector\u2011wide guidance resets or weak large\u2011deal flow could extend the down\u2011drift.",
+          "current_price": 1513.2,
+          "performance": {
+            "1w": {
+              "change_pct": -6.77,
+              "high": 1623.0,
+              "low": 1513.2
+            },
+            "1m": {
+              "change_pct": -7.9,
+              "high": 1643.0,
+              "low": 1513.2
+            },
+            "6m": {
+              "change_pct": 16.35,
+              "high": 1669.0,
+              "low": 1299.04
+            }
+          },
+          "risk_percent": 0,
+          "conviction": "LOW",
+          "conviction_note": "Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual.",
+          "suggested_quantity": {
+            "min": 1,
+            "max": 4,
+            "note": "Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit."
+          },
+          "allocated_amount": 7500,
+          "allocated_shares": 4
+        }
+      ],
+      "summary": "With Nifty 50 down 0.3% today and still in a downtrend (low realized vol ~9.7% annualized), we favor liquid, higher\u2011quality names showing either leadership breakouts or defined\u2011risk recovery setups. The shortlist balances momentum defensives (Apollo Hospitals) and trend leaders (Adani Ports) with a base\u2011to\u2011breakout cyclical (Tata Steel) and a tactical IT rebound candidate (Tech Mahindra). Overall stance: add on dips and demand confirmation; avoid chasing extended moves while the broader index remains trend\u2011weak.",
+      "capital_summary": {
+        "total_capital": 30000,
+        "total_allocated": 30000,
+        "cash_remaining": 0
+      }
+    }
+  },
+  "alert_text": "*AI Equity Analyst \u2014 Today's Shortlist*\n\n_\ud83d\udd25 HIGH CONVICTION = data lines up cleanly, worth acting on. \ud83d\udc40 LOW CONVICTION = a watch-list idea, treat with caution._\n\n1. *APOLLOHOSP*  \ud83d\udc40 LOW CONVICTION  (opportunity 74/100, confidence 62%)\n   _Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual._\n   Stance: *ACCUMULATE*\n   Current price: \u20b98972.00\n   1w: +2.5% (high \u20b98972.00, low \u20b98650.00)\n   1m: +0.8% (high \u20b98972.00, low \u20b98587.00)\n   6m: +15.1% (high \u20b99039.48, low \u20b97136.69)\n   Risk: 0%\n   Bull case: I agree with the Bull Case Agent: Q2 FY26 momentum (revenue up ~16% YoY, EPS ~\u20b9135) alongside very strong technicals (9.5/10, 20\u2011day breakout, near 52\u2011week highs) argues the trend remains up. Defensive sector positioning also helps in a weak tape, and RSI 56.8 leaves room before it gets stretched.\n   Bear case: The Bear Case Agent fairly flags thin participation (0.6x volume) and only +0.8% over 1 month despite being near highs\u2014classic fatigue risk at an above\u2011history valuation. I think that overstates immediate downside given the fresh breakout, but a low\u2011volume breakout can fail quickly if results cadence cools.\n   Near-term outlook: Buy\u2011the\u2011dip behavior likely while RSI stays mid\u201150s and the breakout zone holds. Expect \u20b9145\u2013\u20b9150 daily swings (ATR) and retests of recent highs; failure to add volume on up days would cap near\u2011term upside.\n   Reference target: \u20b99869.20 \u2014 Breakout continuation towards ~1 ATR extensions above the 52\u2011week high, in line with the Bull Agent\u2019s target.\n   Position-size cap: 0\u20130 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500\n   Portfolio fit: good \u2014 Balances the watchlist\u2019s Tech skew (3 names) with Healthcare (2); taking only one of the Healthcare names avoids over\u2011concentration.\n   What would change this view: A decisive close back below the recent breakout band (~\u20b98,600\u2013\u20b98,650) on rising volume.\n   \u26a0 Key risk: Valuation de\u2011rating if growth or margin cadence slows despite recent strong print.\n\n2. *ADANIPORTS*  \ud83d\udc40 LOW CONVICTION  (opportunity 68/100, confidence 58%)\n   _Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual._\n   Stance: *ACCUMULATE*\n   Current price: \u20b91765.00\n   1w: +5.5% (high \u20b91765.00, low \u20b91672.70)\n   1m: +5.8% (high \u20b91765.00, low \u20b91593.10)\n   6m: +25.6% (high \u20b91883.20, low \u20b91298.13)\n   Risk: 0%\n   Bull case: The Bull Case Agent notes a durable uptrend (technical 8/10), +25.6%/6m, 20\u2011day breakout and +9.4% vs Nifty over 1m\u2014buyers continue to back it despite volatility. I agree: tape strength after a negative headline reaction suggests underlying demand on dips.\n   Bear case: I also agree with the Bear Case Agent that the \u22123% reaction to a strong Q1 reflects peak\u2011expectations risk; at an above\u2011history valuation, the next catalyst must beat to extend. ATR ~\u20b939.6 implies swings can be sharp if sentiment wobbles.\n   Near-term outlook: Likely to range with an upward bias; dips toward the mid\u2011\u20b91,700s should find buyers if the broader market steadies. Sustained strength needs improving breadth/volume on up days.\n   Reference target: \u20b91976.80 \u2014 Retest of the 6\u2011month high zone (~\u20b91,883) and extension consistent with the breakout/ATR framework.\n   Position-size cap: 1\u20134 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500 (~4 shares)\n   Portfolio fit: good \u2014 Adds Industrials/Infrastructure exposure (1 name in watchlist) and diversifies away from Technology concentration.\n   What would change this view: A break and close below last week\u2019s low (~\u20b91,673) on heavy volume, or another high\u2011materiality miss leading to persistent relative underperformance.\n   \u26a0 Key risk: Peak\u2011expectations: another strong print that fails to impress could trigger a deeper de\u2011rating.\n   \ud83e\udde0 Bodhi verdict: *CAUTION* \u2014 Post-earnings -3% drop and thin breakout volume remain live concerns; high ATR confirms volatility risk persists despite trend resilience, warranting reduced position size.\n\n3. *TATASTEEL*  \ud83d\udc40 LOW CONVICTION  (opportunity 66/100, confidence 60%)\n   _Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual._\n   Stance: *ACCUMULATE*\n   Current price: \u20b9189.59\n   1w: +2.9% (high \u20b9189.59, low \u20b9184.15)\n   1m: +1.8% (high \u20b9189.59, low \u20b9183.00)\n   6m: +0.0% (high \u20b9216.66, low \u20b9179.80)\n   Risk: 0%\n   Bull case: I align with the Bull Case Agent: recovery setup with a 20\u2011day breakout, RSI 62.3, 1.2x volume, and a recent 11% YoY profit lift provides a base\u2011to\u2011trend transition case. The flat 6\u2011month base offers a defined risk backdrop with room to tag prior resistance.\n   Bear case: The Bear Case Agent is right that a flat 6\u2011month return and volatile post\u2011results reactions show sentiment is fragile and good news may be priced in. I see that as limiting magnitude rather than negating a tactical upswing from a compressed base.\n   Near-term outlook: Bias higher while the 20\u2011day breakout holds; ATR (~\u20b94.7) implies measured daily ranges. Support near last week\u2019s low (~\u20b9184) is important for trend confirmation.\n   Reference target: \u20b9212.34 \u2014 Revisit of the prior supply zone near \u20b9205\u2013\u20b9212, consistent with the Bull Agent\u2019s target and the 6\u2011month range top.\n   Position-size cap: 11\u201339 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500 (~39 shares)\n   Portfolio fit: good \u2014 Adds Basic Materials (1 name in watchlist), complementing Healthcare/Industrials and avoiding over\u2011weight to Tech.\n   What would change this view: Close back below ~\u20b9184\u2013\u20b9185 with expanding volume, indicating a failed breakout.\n   \u26a0 Key risk: Cyclical pricing pressure or margin squeeze could blunt the breakout\u2019s follow\u2011through.\n   \ud83e\udde0 Bodhi verdict: *CAUTION* \u2014 Flat 6-month base despite breakout confirms market skepticism around China/commodity headwinds is ongoing; recent volume pickup suggests tactical opportunity but macro risks not yet resolved.\n\n4. *TECHM*  \ud83d\udc40 LOW CONVICTION  (opportunity 65/100, confidence 55%)\n   _Treat this as a watch-list idea, not a strong call \u2014 either the underlying data has some gaps, or the signals are more mixed than usual._\n   Stance: *ACCUMULATE*\n   Current price: \u20b91513.20\n   1w: -6.8% (high \u20b91623.00, low \u20b91513.20)\n   1m: -7.9% (high \u20b91643.00, low \u20b91513.20)\n   6m: +16.4% (high \u20b91669.00, low \u20b91299.04)\n   Risk: 0%\n   Bull case: I lean toward the Bull Case Agent: an \u2018impressive\u2019 Q1 and 6\u2011month +16.4% trend contrast with recent declines on just 0.3x volume, suggesting weak\u2011hand selling. RSI 36.0 near short\u2011term oversold zones supports a tactical rebound if sector pressure eases.\n   Bear case: The Bear Case Agent correctly flags fading momentum (\u22127.9%/1m, RSI 36.0) and sector volatility; without better follow\u2011through, bounces can fail. I see that as a timing risk, not a thesis breaker, given the prior positive print.\n   Near-term outlook: Expect choppy rebounds; stabilization above \u20b91,520\u2013\u20b91,550 would signal buyers returning. Sector headlines will likely drive gap risk day\u2011to\u2011day.\n   Reference target: \u20b91694.78 \u2014 Re\u2011test of the recent high zone (~\u20b91,669) and modest extension if momentum returns, per the Bull Agent\u2019s target.\n   Position-size cap: 1\u20134 shares max (Based on \u20b930,000 capital and low risk, moderate risk-appetite tier, capped at your 25% max position-size limit.)\n   \ud83d\udcb0 Suggested allocation today: \u20b97,500 (~4 shares)\n   Portfolio fit: good \u2014 Introduces Technology exposure in a list otherwise skewed to non\u2011Tech (watchlist shows 3 Tech names; including one keeps balance).\n   What would change this view: A decisive close below ~\u20b91,510 (near the 1\u2011week low) on rising volume or a fresh negative business update.\n   \u26a0 Key risk: Sector\u2011wide guidance resets or weak large\u2011deal flow could extend the down\u2011drift.\n\n   Capital split: \u20b930,000 deployed of \u20b930,000 (\u20b90 left in cash)\n\n_With Nifty 50 down 0.3% today and still in a downtrend (low realized vol ~9.7% annualized), we favor liquid, higher\u2011quality names showing either leadership breakouts or defined\u2011risk recovery setups. The shortlist balances momentum defensives (Apollo Hospitals) and trend leaders (Adani Ports) with a base\u2011to\u2011breakout cyclical (Tata Steel) and a tactical IT rebound candidate (Tech Mahindra). Overall stance: add on dips and demand confirmation; avoid chasing extended moves while the broader index remains trend\u2011weak._\n\n\u26a0\ufe0f Not investment advice \u2014 AI-generated analysis for informational purposes only. Do your own research and consult a SEBI-registered advisor before investing.",
+  "bodhi_ran": true,
+  "bodhi_report": "**ESCALATION REVIEW - FINAL VERDICTS**\n\nAfter conducting a deeper review of the two flagged symbols (ADANIPORTS and TATASTEEL), here are the final verdicts in JSON format:\n\n```json\n{\n  \"verdicts\": [\n    {\n      \"symbol\": \"ADANIPORTS\",\n      \"verdict\": \"caution\",\n      \"notes\": \"Post-earnings -3% drop and thin breakout volume remain live concerns; high ATR confirms volatility risk persists despite trend resilience, warranting reduced position size.\"\n    },\n    {\n      \"symbol\": \"TATASTEEL\",\n      \"verdict\": \"caution\",\n      \"notes\": \"Flat 6-month base despite breakout confirms market skepticism around China/commodity headwinds is ongoing; recent volume pickup suggests tactical opportunity but macro risks not yet resolved.\"\n    }\n  ]\n}\n```\n\n**Summary of Analysis:**\n\n**ADANIPORTS:** The stock has shown strong momentum (+25.6% over 6 months, +9.4% vs Nifty), but the thin-volume breakout (0.6x) and immediate -3% post-earnings drop are genuine red flags. While the maintained uptrend suggests institutional support remains, the high volatility (ATR \u20b939.6) and negative earnings reaction indicate peak-expectations risk. The concerns are partially absorbed but not fully resolved.\n\n**TATASTEEL:** The flat 6-month performance despite recent breakout signals that China property weakness and commodity price pressures remain live concerns in the market. The recent breakout on 1.2x volume with RSI 62.3 suggests tactical momentum, but the prolonged base formation indicates persistent market skepticism about sector headwinds. Macro risks are not yet fully priced in.\n\nBoth positions warrant a \"caution\" verdict with potential position size reduction or closer monitoring rather than outright rejection.",
+  "bodhi_research_degraded": false,
+  "bodhi_escalation_branch_fired": false,
+  "tv_symbols": [
+    "APOLLOHOSP",
+    "ADANIPORTS",
+    "TATASTEEL",
+    "TECHM"
+  ],
+  "approved_at": "2026-09-09T12:54:10"
+}

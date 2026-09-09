@@ -197,5 +197,7 @@
     "ICICIBANK",
     "MAXHEALTH",
     "JIOFIN"
-  ]
+  ],
+  "rejected_at": "2026-09-09T18:25:51",
+  "rejection_reason": "rejected from dashboard"
 }

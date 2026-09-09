@@ -197,5 +197,7 @@
     "ICICIBANK",
     "APOLLOHOSP",
     "JIOFIN"
-  ]
+  ],
+  "rejected_at": "2026-09-09T18:25:57",
+  "rejection_reason": "rejected from dashboard"
 }
